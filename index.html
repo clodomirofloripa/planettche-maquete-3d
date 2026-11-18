@@ -163,7 +163,7 @@
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
                         <h1 class="text-[11px] sm:text-sm md:text-base font-extrabold tracking-tight text-white truncate">Parque Náutico Lagoa dos Quadros — PlaneTchê</h1>
-                        <span class="hidden lg:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full shrink-0">20 e 21 Nov 2026 • Capão da Canoa</span>
+                        <span class="hidden lg:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full shrink-0">Capão da Canoa • RS</span>
                     </div>
                     <p class="text-[9.5px] sm:text-[11px] text-slate-300 truncate flex items-center gap-2">
                         <span>Maquete 3D Interativa • Clique nas estruturas</span>
@@ -601,12 +601,12 @@
             },
             palco: {
                 badge: 'Área Principal • Show PlaneTchê',
-                title: 'Palco Principal — PlaneTchê (20 e 21 Nov 2026)',
-                desc: 'Estrutura profissional em Box Truss de alumínio posicionada à frente do camarim único e voltada para o grande pavilhão central, equipada com Telão de LED Principal e testeira exibindo PLANETCHÊ — 20 E 21 DE NOVEMBRO DE 2026.',
+                title: 'Palco Principal — PlaneTchê',
+                desc: 'Estrutura profissional em Box Truss de alumínio posicionada à frente do camarim único e voltada para o grande pavilhão central, equipada com Telão de LED Principal e testeira exibindo PLANETCHÊ.',
                 dim: '20m × 10m (Altura 9,5m)',
                 pos: 'Entre Camarim e Pavilhão',
                 specs: [
-                    ['Telão LED Principal', 'PLANETCHÊ • 20 e 21 de Novembro de 2026'],
+                    ['Telão LED Principal', 'PLANETCHÊ • Parque Náutico Lagoa dos Quadros'],
                     ['Frente de Palco', 'Voltada para o Pavilhão (Sul)'],
                     ['Sonorização', 'Line Array duplo + Subgraves frontais'],
                     ['Acesso Backstage', 'Escadaria integrada ao Camarim e Artistas']
@@ -995,11 +995,11 @@
             ctx.textBaseline = 'middle';
 
             if (isHeader) {
-                ctx.font = '900 54px Inter, sans-serif';
+                ctx.font = '900 40px Inter, sans-serif';
                 ctx.fillStyle = '#facc15';
                 ctx.shadowColor = 'rgba(250, 204, 21, 0.6)';
                 ctx.shadowBlur = 14;
-                ctx.fillText('PLANETCHÊ • 20 E 21 DE NOVEMBRO DE 2026', W / 2, H / 2);
+                ctx.fillText('PLANETCHÊ • PARQUE NÁUTICO LAGOA DOS QUADROS', W / 2, H / 2);
             } else {
                 const glow = ctx.createRadialGradient(W / 2, H * 0.42, 20, W / 2, H * 0.42, 420);
                 glow.addColorStop(0, 'rgba(16, 185, 129, 0.28)');
@@ -1010,7 +1010,7 @@
 
                 ctx.font = '800 30px Inter, sans-serif';
                 ctx.fillStyle = '#34d399';
-                ctx.fillText('PARQUE NÁUTICO LAGOA DOS QUADROS • CAPÃO DA CANOA', W / 2, H * 0.20);
+                ctx.fillText('PARQUE NÁUTICO LAGOA DOS QUADROS', W / 2, H * 0.20);
 
                 ctx.save();
                 ctx.font = '900 132px Inter, Impact, sans-serif';
@@ -1025,9 +1025,9 @@
                 ctx.roundRect(W / 2 - 330, H * 0.69, 660, 78, 18);
                 ctx.fill();
 
-                ctx.font = '900 40px Inter, sans-serif';
+                ctx.font = '900 34px Inter, sans-serif';
                 ctx.fillStyle = '#09090b';
-                ctx.fillText('20 E 21 DE NOVEMBRO DE 2026', W / 2, H * 0.69 + 40);
+                ctx.fillText('CAPÃO DA CANOA • RIO GRANDE DO SUL', W / 2, H * 0.69 + 40);
             }
 
             const tex = new THREE.CanvasTexture(canvas);
@@ -2393,7 +2393,7 @@
         // ============================================================================
         const LABELS_CONFIG = [
             { id: 'camarins', text: 'camarins', pos: new THREE.Vector3(-65, 5.5, -51), bg: 'bg-blue-700/90 text-white', clickable: true },
-            { id: 'palco', text: 'palco PlaneTchê (20-21 Nov)', pos: new THREE.Vector3(-65, 11.2, -42), bg: 'bg-red-600/90 text-white', clickable: true },
+            { id: 'palco', text: 'palco PlaneTchê', pos: new THREE.Vector3(-65, 11.2, -42), bg: 'bg-red-600/90 text-white', clickable: true },
             { id: 'pavilhao', text: 'pavilhão (20×50m)', pos: new THREE.Vector3(-65, 10.0, -10), bg: 'bg-yellow-400/95 text-slate-950', clickable: true },
             { id: 'onibus_baitaca', text: 'ônibus do baitaca', pos: new THREE.Vector3(-36, 5.5, -28), bg: 'bg-amber-500/95 text-slate-950', clickable: true },
             { id: 'onibus_baitaca', text: 'estacionamento artistas', pos: new THREE.Vector3(-28, 3.2, -45), bg: 'bg-amber-900/90 text-amber-100', clickable: true },
@@ -2591,9 +2591,9 @@
             },
             {
                 step: '04 / 10',
-                title: 'Palco Principal — PlaneTchê (20 e 21 Nov 2026)',
+                title: 'Palco Principal — PlaneTchê',
                 dim: 'Telão LED HD • 20m × 10m',
-                desc: 'Inspeção frontal do Palco Principal com o Telão de LED oficial do PlaneTchê (20 e 21 de Novembro de 2026) e Line Arrays.',
+                desc: 'Inspeção frontal do Palco Principal com o Telão de LED oficial do PlaneTchê e Line Arrays.',
                 cam: new THREE.Vector3(-65, 10, -16),
                 look: new THREE.Vector3(-65, 5.2, -42),
                 atmo: 'day'
