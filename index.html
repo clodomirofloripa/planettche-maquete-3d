@@ -1,0 +1,3444 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Maquete 3D Realista & Tour Imersivo — Parque Náutico Lagoa dos Quadros</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #0b1120;
+            overscroll-behavior: none;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            inset: 0;
+            z-index: 1;
+            touch-action: none;
+        }
+        #canvas-container canvas {
+            display: block;
+            touch-action: none;
+        }
+        #labels-container {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            pointer-events: none;
+            overflow: hidden;
+        }
+        .poi-label {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: auto;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+            white-space: nowrap;
+            will-change: transform;
+        }
+        .poi-label:hover .poi-pin {
+            transform: scale(1.08);
+            border-color: #38bdf8;
+        }
+        .poi-pin {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3.5px 8.5px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.75);
+            transition: transform 0.15s ease, border-color 0.15s ease;
+        }
+        @media (max-width: 640px) {
+            .poi-pin {
+                font-size: 9.5px;
+                padding: 2.5px 6px;
+            }
+        }
+        .poi-stem {
+            width: 2px;
+            height: 9px;
+            background: rgba(255,255,255,0.85);
+            margin: 0 auto;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        .poi-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: #38bdf8;
+            border: 1.5px solid #ffffff;
+            margin: -1px auto 0;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.35);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.45);
+            border-radius: 9999px;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.86);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+        }
+        .camera-btn.active {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            color: white;
+            border-color: #60a5fa;
+            box-shadow: 0 0 14px rgba(37, 99, 235, 0.45);
+        }
+        .sector-btn.active {
+            background: rgba(37, 99, 235, 0.28);
+            border-color: rgba(96, 165, 250, 0.55);
+            color: #ffffff;
+        }
+        @keyframes pulseRec {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.35; transform: scale(1.2); }
+        }
+        .rec-dot {
+            animation: pulseRec 1.1s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="text-slate-100">
+
+    <!-- 3D WebGL Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <!-- Floating 3D Labels Container -->
+    <div id="labels-container"></div>
+
+    <!-- ========================================================================= -->
+    <!-- RESPONSIVE NON-OVERLAPPING FLEXBOX HUD LAYOUT                             -->
+    <!-- ========================================================================= -->
+    <div id="hud-root" class="fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-2 sm:p-3 gap-2 overflow-hidden">
+
+        <!-- 1. TOP ROW: HEADER (Hidden automatically during Tour / Free-Flight Mode) -->
+        <header id="normal-header" class="w-full flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <!-- Brand & Title -->
+            <div class="glass-panel px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl shadow-2xl pointer-events-auto flex items-center gap-2.5 max-w-full min-w-0">
+                <div class="w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center shadow-inner shrink-0">
+                    <svg class="w-4 h-4 sm:w-5 sm:h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-[11px] sm:text-sm md:text-base font-extrabold tracking-tight text-white truncate">Parque Náutico Lagoa dos Quadros — PlaneTchê</h1>
+                        <span class="hidden lg:inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded-full shrink-0">20 e 21 Nov 2026 • Capão da Canoa</span>
+                    </div>
+                    <p class="text-[9.5px] sm:text-[11px] text-slate-300 truncate flex items-center gap-2">
+                        <span>Maquete 3D Interativa • Clique nas estruturas</span>
+                        <span id="fps-badge" class="hidden sm:inline-block px-1.5 py-0.2 rounded bg-slate-800/90 text-emerald-400 font-mono text-[9.5px] border border-slate-700/70">60 FPS</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Center Quick Metrics (Only visible on ultra-wide screens) -->
+            <div class="glass-panel px-3 py-1.5 rounded-xl shadow-xl pointer-events-auto hidden 2xl:flex items-center gap-3.5 text-xs">
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-sm bg-yellow-400 inline-block"></span>
+                    <div>
+                        <span class="text-slate-400 block text-[9px] leading-none">Pavilhão Principal</span>
+                        <strong class="text-white font-bold text-[11px]">20m × 50m (Vão Livre)</strong>
+                    </div>
+                </div>
+                <div class="h-5 w-px bg-slate-700"></div>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 inline-block"></span>
+                    <div>
+                        <span class="text-slate-400 block text-[9px] leading-none">Comércio (Oeste/Sul)</span>
+                        <strong class="text-white font-bold text-[11px]">15 Tendas 5m × 5m</strong>
+                    </div>
+                </div>
+                <div class="h-5 w-px bg-slate-700"></div>
+                <div class="flex items-center gap-1.5">
+                    <span class="w-2.5 h-2.5 rounded-sm bg-orange-400 inline-block"></span>
+                    <div>
+                        <span class="text-slate-400 block text-[9px] leading-none">Área de Churrasco</span>
+                        <strong class="text-white font-bold text-[11px]">10×10m + 2 Giratórias</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Action Toolbar (Responsive buttons) -->
+            <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 pointer-events-auto">
+                <button onclick="toggleMobileSectorsDrawer()" class="md:hidden px-2.5 py-1.5 rounded-xl text-[11px] font-bold glass-panel hover:bg-slate-800 text-emerald-300 flex items-center gap-1 transition">
+                    <span>🗺️</span>
+                    <span>Setores</span>
+                </button>
+
+                <button onclick="startImmersiveTour(true)" class="px-2.5 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-extrabold uppercase tracking-wider bg-gradient-to-r from-amber-500 via-orange-500 to-red-600 hover:from-amber-400 hover:to-red-500 text-white shadow-lg shadow-orange-600/30 border border-amber-300/50 flex items-center gap-1.5 transition transform hover:scale-[1.02] active:scale-95">
+                    <span>🎬</span>
+                    <span>Tour</span>
+                </button>
+
+                <button onclick="enterFreeMenuLessMode()" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold glass-panel hover:bg-slate-800 text-slate-100 flex items-center gap-1.5 transition" title="Explorar livremente sem menus (Mouse/Toque + WASD/Setas)">
+                    <span>🧭</span>
+                    <span class="hidden sm:inline">Voo Livre</span>
+                </button>
+
+                <button onclick="cycleTimeOfDay()" id="time-of-day-btn" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold glass-panel hover:bg-slate-800 text-amber-300 flex items-center gap-1.5 transition" title="Alternar Iluminação: Dia Ensolarado / Pôr do Sol / Show Noturno">
+                    <span id="time-icon">☀️</span>
+                    <span id="time-label" class="hidden lg:inline">Dia Ensolarado</span>
+                </button>
+
+                <button onclick="cycleQualityMode()" id="quality-btn" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold glass-panel hover:bg-slate-800 text-sky-300 flex items-center gap-1 transition" title="Alternar Qualidade Gráfica / Performance">
+                    <span>⚡</span>
+                    <span id="quality-label" class="hidden xl:inline">Alta</span>
+                </button>
+
+                <button onclick="toggleHelpModal()" class="px-2.5 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold glass-panel hover:bg-slate-800 text-slate-200 flex items-center transition" title="Ajuda e Atalhos de Controle">
+                    <span>❓</span>
+                </button>
+
+                <button onclick="toggleVideoRecording()" id="header-record-btn" class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-rose-600/90 hover:bg-rose-500 text-white border border-rose-400/40 flex items-center gap-1.5 transition shadow-lg" title="Gravar vídeo .WEBM a 60 FPS">
+                    <span id="header-rec-dot" class="w-2 h-2 rounded-full bg-white inline-block"></span>
+                    <span id="header-rec-label" class="hidden sm:inline">Gravar</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. MIDDLE ROW: LEFT & RIGHT SIDEBARS (Responsive & Constrained by flex-1 min-h-0) -->
+        <div id="normal-middle" class="flex-1 min-h-0 w-full flex flex-col md:flex-row justify-between items-start gap-2.5 overflow-hidden py-0.5 relative">
+
+            <!-- LEFT SIDEBAR: Croqui Sectors & Visual Layers (Overlay Drawer on Mobile, Docked on Desktop) -->
+            <aside id="left-panel" class="hidden md:flex fixed md:static inset-x-2 top-16 bottom-16 md:inset-auto w-auto md:w-64 lg:w-72 glass-panel rounded-xl p-3 shadow-2xl pointer-events-auto md:max-h-full flex-col overflow-hidden shrink-0 z-30">
+                <div class="flex items-center justify-between pb-2 mb-2 border-b border-slate-700/80 shrink-0">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-slate-200 flex items-center gap-1.5">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+                        </svg>
+                        Setores do Croqui
+                    </h2>
+                    <div class="flex items-center gap-1">
+                        <button id="toggle-left-btn" class="hidden md:inline-block text-slate-400 hover:text-white text-xs px-2 py-0.5 rounded bg-slate-800/90 font-bold" title="Minimizar/Expandir Menu">−</button>
+                        <button onclick="toggleMobileSectorsDrawer()" class="md:hidden text-slate-300 hover:text-white text-xs px-2 py-0.5 rounded bg-slate-800/90 font-bold" title="Fechar Setores">✕</button>
+                    </div>
+                </div>
+
+                <!-- Quick Sector Filter -->
+                <div class="mb-2 shrink-0">
+                    <input type="text" id="sector-search" oninput="filterSectors(this.value)" placeholder="Filtrar setor..." class="w-full px-2.5 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700/80 text-xs text-slate-100 placeholder-slate-400 focus:outline-none focus:border-sky-400 select-text" style="user-select: text; -webkit-user-select: text;">
+                </div>
+
+                <div id="left-panel-content" class="overflow-y-auto pr-1 space-y-2.5 flex-1">
+                    <div id="sectors-list" class="space-y-1 text-xs">
+                        <p class="sector-group-title text-[10px] font-semibold text-blue-400 uppercase tracking-wider mb-1">1. Área Principal (Azul)</p>
+                        <button data-sector="camarins" onclick="focusElement('camarins')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-blue-500 border border-white/60 shrink-0"></span>
+                                <span>Camarim (1 Único Atrás)</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="palco" onclick="focusElement('palco')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-red-500 border border-white/60 shrink-0"></span>
+                                <span>Palco Principal</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="pavilhao" onclick="focusElement('pavilhao')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-yellow-400 border border-white/60 shrink-0"></span>
+                                <span>Pavilhão (20×50m)</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="onibus_baitaca" onclick="focusElement('onibus_baitaca')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-amber-600 border border-yellow-300 shrink-0"></span>
+                                <span>Ônibus do Baitaca & VIP</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="comercio" onclick="focusElement('comercio')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-emerald-400 border border-white/60 shrink-0"></span>
+                                <span>Comércio (Tendas 5×5m)</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="gradis" onclick="focusElement('gradis')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-neutral-900 border border-slate-400 shrink-0"></span>
+                                <span>Gradis de Isolamento</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+
+                        <p class="sector-group-title text-[10px] font-semibold text-yellow-400 uppercase tracking-wider mt-2 mb-1">2. Área do Churrasco (Amarelo)</p>
+                        <button data-sector="tenda_churrasco" onclick="focusElement('tenda_churrasco')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-orange-400 border border-white/60 shrink-0"></span>
+                                <span>Tenda do Churrasco (10×10m)</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="fogo_chao" onclick="focusElement('fogo_chao')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-lime-700 border border-white/60 shrink-0"></span>
+                                <span>Churrasqueiras Fogo de Chão</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="giratorias" onclick="focusElement('giratorias')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-amber-800 border border-white/60 shrink-0"></span>
+                                <span>Churrasqueiras Giratórias (2 un.)</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="motorhome" onclick="focusElement('motorhome')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-green-400 border border-white/60 shrink-0"></span>
+                                <span>Área de Motorhomes</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+
+                        <p class="sector-group-title text-[10px] font-semibold text-purple-400 uppercase tracking-wider mt-2 mb-1">3. Estacionamento & Orla</p>
+                        <button data-sector="estacionamento" onclick="focusElement('estacionamento')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-sky-500 border border-purple-400 shrink-0"></span>
+                                <span>Estacionamento Geral</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                        <button data-sector="lagoa" onclick="focusElement('lagoa')" class="sector-btn w-full text-left px-2.5 py-1.5 rounded-lg border border-transparent hover:bg-slate-800/90 flex items-center justify-between group transition">
+                            <span class="flex items-center gap-2">
+                                <span class="w-2.5 h-2.5 rounded-sm bg-cyan-400 border border-white/60 shrink-0"></span>
+                                <span>Orla Lagoa dos Quadros & Trapiche</span>
+                            </span>
+                            <span class="text-[10px] text-slate-400 group-hover:text-white">Ver →</span>
+                        </button>
+                    </div>
+
+                    <!-- Layer Toggles -->
+                    <div class="pt-2.5 border-t border-slate-700/80 space-y-1.5 text-xs">
+                        <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Camadas de Visualização</p>
+                        
+                        <label class="flex items-center justify-between cursor-pointer py-1">
+                            <span class="text-slate-200">Etiquetas Flutuantes</span>
+                            <input type="checkbox" id="toggle-labels" checked class="accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                        </label>
+
+                        <label class="flex items-center justify-between cursor-pointer py-1">
+                            <span class="text-slate-200">Demarcações do Croqui</span>
+                            <input type="checkbox" id="toggle-croqui-lines" checked class="accent-blue-500 w-4 h-4 rounded cursor-pointer">
+                        </label>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- RIGHT SIDEBAR: Structure Inspector Card -->
+            <aside id="inspector-panel" class="w-full sm:w-72 md:w-80 glass-panel rounded-xl p-3 sm:p-3.5 shadow-2xl pointer-events-auto max-h-[38vh] md:max-h-full overflow-y-auto shrink-0 hidden lg:block ml-auto mt-auto md:mt-0">
+                <div class="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                        <span id="insp-badge" class="inline-block px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 mb-1">Setor Principal</span>
+                        <h3 id="insp-title" class="text-sm sm:text-base font-extrabold text-white leading-snug">Vista Geral do Evento</h3>
+                    </div>
+                    <button onclick="resetSelection()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 shrink-0" title="Fechar Seleção">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <p id="insp-desc" class="text-xs text-slate-300 leading-relaxed mb-3">
+                    Maquete tridimensional realista georreferenciada conforme o croqui operacional no Parque Náutico Lagoa dos Quadros. Clique em qualquer estrutura ou inicie o Tour Imersivo.
+                </p>
+
+                <div class="grid grid-cols-2 gap-2 mb-3 text-xs">
+                    <div class="bg-slate-800/80 border border-slate-700/70 rounded-lg p-2">
+                        <span class="text-[10px] text-slate-400 block">Dimensão / Escala</span>
+                        <strong id="insp-dim" class="text-white font-semibold">Escala Real 1:1</strong>
+                    </div>
+                    <div class="bg-slate-800/80 border border-slate-700/70 rounded-lg p-2">
+                        <span class="text-[10px] text-slate-400 block">Localização</span>
+                        <strong id="insp-pos" class="text-emerald-300 font-semibold">Parque Náutico</strong>
+                    </div>
+                </div>
+
+                <div id="insp-specs" class="text-[11px] text-slate-300 bg-slate-900/70 rounded-lg p-2.5 border border-slate-800 space-y-1">
+                    <div class="flex justify-between"><span>• Camarim:</span> <strong class="text-white">1 módulo atrás do palco</strong></div>
+                    <div class="flex justify-between"><span>• Estac. Artistas:</span> <strong class="text-white">À direita do palco (Área Azul)</strong></div>
+                    <div class="flex justify-between"><span>• Comércio (5×5m):</span> <strong class="text-white">12 Oeste + 3 Sul (Vão Livre)</strong></div>
+                    <div class="flex justify-between"><span>• Churrasqueiras Giratórias:</span> <strong class="text-white">Exatamente 2 unidades</strong></div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- 3A. BOTTOM ROW (NORMAL MODE): CAMERA PRESETS BAR + MINI COMPASS -->
+        <footer id="normal-footer" class="w-full flex items-center justify-center gap-2 shrink-0">
+            <!-- Mini Compass Indicator (Desktop) -->
+            <div class="hidden sm:flex glass-panel w-9 h-9 rounded-full items-center justify-center pointer-events-auto shrink-0 shadow-xl" title="Bússola (Norte = Lagoa dos Quadros)">
+                <div id="compass-needle" class="text-[10px] font-black text-rose-400 flex flex-col items-center leading-none transition-transform duration-75">
+                    <span>▲</span>
+                    <span class="text-[8px] text-white">N</span>
+                </div>
+            </div>
+
+            <nav class="glass-panel px-2 py-1.5 sm:px-2.5 sm:py-2 rounded-2xl shadow-2xl pointer-events-auto flex items-center gap-1 sm:gap-1.5 max-w-full overflow-x-auto no-scrollbar">
+                <button onclick="setCameraPreset('overview')" id="cam-overview" class="camera-btn active px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>📐</span> <span>Vista Geral 3D</span>
+                </button>
+                <button onclick="setCameraPreset('topdown')" id="cam-topdown" class="camera-btn px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>🗺️</span> <span>Croqui 2D</span>
+                </button>
+                <button onclick="setCameraPreset('stage')" id="cam-stage" class="camera-btn px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>🎸</span> <span>Palco & Baitaca</span>
+                </button>
+                <button onclick="setCameraPreset('pavilhao')" id="cam-pavilhao" class="camera-btn px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>🎪</span> <span>Pavilhão & Comércio</span>
+                </button>
+                <button onclick="setCameraPreset('bbq')" id="cam-bbq" class="camera-btn px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>🔥</span> <span>Churrasco</span>
+                </button>
+                <button onclick="setCameraPreset('parking')" id="cam-parking" class="camera-btn px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>🚗</span> <span>Estacionamento</span>
+                </button>
+                <button onclick="setCameraPreset('lagoon')" id="cam-lagoon" class="camera-btn px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold border border-slate-700 hover:bg-slate-800 transition whitespace-nowrap flex items-center gap-1">
+                    <span>⛵</span> <span>Orla Lagoa dos Quadros</span>
+                </button>
+            </nav>
+        </footer>
+
+        <!-- 3B. BOTTOM ROW (TOUR / MENU-FREE MODE): UNIFIED NON-OVERLAPPING TOUR DOCK -->
+        <footer id="tour-footer" class="hidden w-full flex flex-col items-center gap-2 shrink-0 mt-auto">
+            <div class="w-full max-w-5xl glass-panel rounded-2xl p-2.5 sm:p-3.5 shadow-2xl pointer-events-auto border border-white/15 flex flex-col gap-2">
+                <!-- Top Row of Tour Dock: Current Environment Info + Chapter Selector -->
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-700/80 pb-2">
+                    <div class="flex items-center gap-2 min-w-0 flex-1">
+                        <span id="tour-step-badge" class="px-2 py-0.5 sm:px-2.5 sm:py-1 text-[10px] font-black uppercase tracking-widest rounded-lg bg-amber-500/20 text-amber-300 border border-amber-400/40 shrink-0">
+                            01 / 10
+                        </span>
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <h2 id="tour-step-title" class="text-xs sm:text-base font-extrabold text-white truncate">
+                                    Vista Panorâmica & Rodovia RS-389
+                                </h2>
+                                <span id="tour-step-dim" class="hidden md:inline-block text-[11px] font-semibold text-emerald-300 shrink-0">
+                                    • Escala 1:1
+                                </span>
+                            </div>
+                            <p id="tour-step-desc" class="hidden sm:block text-[11px] text-slate-300 truncate max-w-2xl">
+                                Aproximação aérea pelo acesso sul da rodovia RS-389 revelando o Parque Náutico Lagoa dos Quadros.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Quick Jump Dropdown to any Environment -->
+                    <div class="flex items-center gap-2 shrink-0">
+                        <select id="tour-chapter-select" onchange="jumpToTourStep(this.value)" class="bg-slate-800/95 text-slate-100 text-[11px] sm:text-xs font-semibold rounded-xl px-2 py-1 sm:px-2.5 sm:py-1.5 border border-slate-600 focus:outline-none cursor-pointer max-w-[165px] sm:max-w-none">
+                            <option value="0">01. Vista Geral & RS-389</option>
+                            <option value="1">02. Comércio (Tendas 5×5m)</option>
+                            <option value="2">03. Pavilhão Principal (20×50m)</option>
+                            <option value="3">04. Palco Principal & Luzes</option>
+                            <option value="4">05. Camarim Único (Backstage)</option>
+                            <option value="5">06. Ônibus do Baitaca & VIP</option>
+                            <option value="6">07. Gradis de Isolamento</option>
+                            <option value="7">08. Tenda do Churrasco (10×10m)</option>
+                            <option value="8">09. Fogo de Chão & 2 Giratórias</option>
+                            <option value="9">10. Motorhomes, Estac. & Show</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Bottom Row of Tour Dock: Transport Controls + Timeline + Action Buttons -->
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <!-- Left: Prev / Play-Pause / Next / Speed -->
+                    <div class="flex items-center gap-1">
+                        <button onclick="prevTourStep()" class="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition" title="Ambiente Anterior (Seta Esquerda)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                        </button>
+
+                        <button onclick="toggleTourPause()" id="tour-play-btn" class="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[11px] sm:text-xs flex items-center gap-1 transition shadow">
+                            <span id="tour-play-icon">⏸</span>
+                            <span id="tour-play-label">Pausar</span>
+                        </button>
+
+                        <button onclick="nextTourStep()" class="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 transition" title="Próximo Ambiente (Seta Direita)">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </button>
+
+                        <button onclick="cycleTourSpeed()" id="tour-speed-btn" class="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-amber-300 border border-slate-700 transition" title="Velocidade do Tour">
+                            1.0x
+                        </button>
+                    </div>
+
+                    <!-- Center: Scrubbing Timeline -->
+                    <div class="flex-1 min-w-[110px] flex items-center gap-2">
+                        <input type="range" id="tour-progress-slider" min="0" max="1000" value="0" class="w-full accent-amber-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+                        <span id="tour-time-label" class="text-[10px] sm:text-[11px] font-bold text-slate-300 w-8 text-right">0%</span>
+                    </div>
+
+                    <!-- Right: Clean Toggles, Time of Day, Record & Exit -->
+                    <div class="flex flex-wrap items-center gap-1">
+                        <button onclick="toggleCleanGraphicsInTour()" id="tour-clean-graphics-btn" class="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-slate-200 border border-slate-700 transition" title="Mostrar/Ocultar Etiquetas e Linhas do Croqui">
+                            🏷️ <span class="hidden md:inline">Etiquetas: </span>ON
+                        </button>
+
+                        <button onclick="cycleTimeOfDay()" id="tour-time-btn" class="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-amber-300 border border-slate-700 transition" title="Alternar Horário/Luz">
+                            🌅 <span class="hidden md:inline">Luz</span>
+                        </button>
+
+                        <button onclick="toggleVideoRecording()" id="tour-record-btn" class="px-2 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-bold flex items-center gap-1 transition" title="Gravar Vídeo .WEBM">
+                            <span id="tour-rec-dot" class="w-2 h-2 rounded-full bg-white inline-block"></span>
+                            <span id="tour-rec-label" class="hidden sm:inline">Gravar</span>
+                        </button>
+
+                        <button onclick="toggleZeroHudMode(true)" class="px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-semibold text-sky-300 border border-sky-500/30 transition" title="Ocultar também esta barra para captura 100% limpa (Tecla H)">
+                            👁️ <span class="hidden lg:inline">Tela Limpa (H)</span>
+                        </button>
+
+                        <button onclick="exitImmersiveMode()" class="px-2.5 py-1.5 rounded-xl bg-slate-700 hover:bg-red-600 text-white text-[11px] font-bold transition" title="Voltar aos Menus (ESC)">
+                            ✖ <span class="hidden sm:inline">Sair</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Ultra-Discreet Pill when in 100% Zero-HUD Mode (Only visible when all bars are hidden with 'H') -->
+    <div id="clean-mode-pill" class="hidden fixed top-3 right-3 z-40 opacity-35 hover:opacity-100 transition-opacity duration-300 flex items-center gap-2 pointer-events-auto">
+        <button onclick="toggleZeroHudMode(false)" class="glass-panel px-3 py-1.5 rounded-full text-[11px] font-bold text-white shadow-lg border border-white/20 flex items-center gap-1.5">
+            <span>👁️ Mostrar Controles (H)</span>
+        </button>
+        <button onclick="exitImmersiveMode()" class="glass-panel px-3 py-1.5 rounded-full text-[11px] font-bold text-rose-300 hover:text-white shadow-lg border border-rose-400/30">
+            ✖ Menus (ESC)
+        </button>
+    </div>
+
+    <!-- Help & Controls Modal -->
+    <div id="help-modal" class="hidden fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) toggleHelpModal()">
+        <div class="glass-panel max-w-md w-full rounded-2xl p-5 shadow-2xl border border-white/15 space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-700/80 pb-2.5">
+                <h3 class="text-sm sm:text-base font-extrabold text-white flex items-center gap-2">
+                    <span>🎮</span> Controles & Atalhos da Maquete 3D
+                </h3>
+                <button onclick="toggleHelpModal()" class="text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-800 text-xs font-bold">✕</button>
+            </div>
+            <div class="space-y-2 text-xs text-slate-300">
+                <div class="bg-slate-900/70 rounded-xl p-2.5 border border-slate-800 space-y-1">
+                    <p class="font-bold text-sky-300 text-[11px] uppercase">Mouse & Toque</p>
+                    <p>• <strong>Girar câmera:</strong> Arraste com botão esquerdo (ou 1 dedo)</p>
+                    <p>• <strong>Mover (Pan):</strong> Arraste com botão direito / Shift+Arraste (ou 2 dedos)</p>
+                    <p>• <strong>Zoom:</strong> Scroll do mouse (ou pinça com 2 dedos)</p>
+                    <p>• <strong>Inspecionar:</strong> Clique em qualquer estrutura ou etiqueta</p>
+                </div>
+                <div class="bg-slate-900/70 rounded-xl p-2.5 border border-slate-800 space-y-1">
+                    <p class="font-bold text-amber-300 text-[11px] uppercase">Teclado</p>
+                    <p>• <strong>W A S D / Setas:</strong> Voar pelo terreno</p>
+                    <p>• <strong>Q / E:</strong> Girar câmera • <strong>+ / -:</strong> Zoom</p>
+                    <p>• <strong>1 a 7:</strong> Câmeras rápidas • <strong>Espaço:</strong> Pausar/Retomar Tour</p>
+                    <p>• <strong>H:</strong> Ocultar HUD no Tour • <strong>ESC:</strong> Sair do Tour</p>
+                </div>
+            </div>
+            <button onclick="toggleHelpModal()" class="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition">Entendi</button>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // 1. METADATA & OPERATIONAL SPECS (100% FAITHFUL TO THE CROQUI)
+        // ============================================================================
+        const ELEMENT_DATA = {
+            camarins: {
+                badge: 'Área Principal • Backstage Norte',
+                title: 'Camarim VIP (Estrutura Única)',
+                desc: 'Módulo único climatizado posicionado exatamente atrás (ao norte) do palco principal, com portas de vidro temperado, máquinas de ar-condicionado e passarela de madeira integrada ao palco.',
+                dim: '18m × 4m (1 Módulo)',
+                pos: 'Atrás do Palco (Norte)',
+                specs: [
+                    ['Quantidade', 'Somente 1 estrutura'],
+                    ['Posicionamento', 'Colado atrás do palco'],
+                    ['Isolamento', 'Acesso exclusivo backstage'],
+                    ['Equipamento', 'Climatizado + Deck de acesso']
+                ],
+                target: { x: -65, y: 2, z: -51 },
+                camPos: { x: -65, y: 26, z: -82 }
+            },
+            palco: {
+                badge: 'Área Principal • Show PlaneTchê',
+                title: 'Palco Principal — PlaneTchê (20 e 21 Nov 2026)',
+                desc: 'Estrutura profissional em Box Truss de alumínio posicionada à frente do camarim único e voltada para o grande pavilhão central, equipada com Telão de LED Principal e testeira exibindo PLANETCHÊ — 20 E 21 DE NOVEMBRO DE 2026.',
+                dim: '20m × 10m (Altura 9,5m)',
+                pos: 'Entre Camarim e Pavilhão',
+                specs: [
+                    ['Telão LED Principal', 'PLANETCHÊ • 20 e 21 de Novembro de 2026'],
+                    ['Frente de Palco', 'Voltada para o Pavilhão (Sul)'],
+                    ['Sonorização', 'Line Array duplo + Subgraves frontais'],
+                    ['Acesso Backstage', 'Escadaria integrada ao Camarim e Artistas']
+                ],
+                target: { x: -65, y: 4.5, z: -42 },
+                camPos: { x: -65, y: 16, z: -15 }
+            },
+            pavilhao: {
+                badge: 'Área Principal • Cobertura Central',
+                title: 'Pavilhão Principal (20m × 50m)',
+                desc: 'Tenda estruturada de grande porte em duas águas posicionada em frente ao palco. Conta com piso limpo em vão livre (sem mesas ou obstáculos internos), pilares metálicos laterais e cobertura branca tensionada.',
+                dim: '20m × 50m (1.000 m² Livres)',
+                pos: 'Centro da Área Azul',
+                specs: [
+                    ['Largura × Comprimento', '20 metros × 50 metros'],
+                    ['Pé-direito', '5m nas laterais / 8,8m na cumeeira'],
+                    ['Área Interna', '100% Vão livre (piso limpo)'],
+                    ['Circulação', 'Corredor comercial a Oeste e Sudoeste']
+                ],
+                target: { x: -65, y: 4, z: -10 },
+                camPos: { x: -112, y: 42, z: 26 }
+            },
+            onibus_baitaca: {
+                badge: 'Área Principal • Backstage Leste',
+                title: 'Ônibus do Baitaca & Estac. Artistas',
+                desc: 'Localizado dentro da área principal (canto superior direito do polígono azul), imediatamente à direita do palco e encostado nos gradis. O ônibus rodoviário do Baitaca fica estacionado na base do setor marrom.',
+                dim: 'Ônibus 14m + Frota VIP',
+                pos: 'Direita do Palco (Junto ao Gradil)',
+                specs: [
+                    ['Ônibus do Baitaca', 'Marcopolo 3 Eixos "Do Fundo da Grota"'],
+                    ['Posição do Ônibus', 'Horizontal na base do polígono marrom'],
+                    ['Estac. Artistas', 'Caminhonetes e SUVs da produção'],
+                    ['Divisa Leste', 'Separado da estrada pelos Gradis']
+                ],
+                target: { x: -34, y: 2, z: -34 },
+                camPos: { x: -8, y: 26, z: -8 }
+            },
+            comercio: {
+                badge: 'Área Principal • Feira & Gastronomia',
+                title: 'Comércio (Tendas Piramidais 5m × 5m)',
+                desc: 'Conjunto de 15 tendas piramidais brancas (5x5m) com vão livre embaixo: 12 tendas alinhadas no corredor oeste e 3 tendas no início esquerdo do corredor sul (com 5 tendas removidas da direita para a esquerda).',
+                dim: '15 Tendas de 5m × 5m (Vão Livre)',
+                pos: 'Corredor Oeste (12) e Sul-Oeste (3)',
+                specs: [
+                    ['Padrão de Tenda', 'Piramidal branca 5m × 5m (vão livre)'],
+                    ['Corredor Oeste', '12 tendas alinhadas à esquerda do pavilhão'],
+                    ['Corredor Sul', '3 tendas à esquerda (5 removidas da dir. p/ esq.)'],
+                    ['Lateral Direita', 'Totalmente livre de tendas']
+                ],
+                target: { x: -82, y: 2, z: 12 },
+                camPos: { x: -124, y: 38, z: 50 }
+            },
+            gradis: {
+                badge: 'Segurança & Controle de Acesso',
+                title: 'Gradis de Isolamento',
+                desc: 'Duas linhas contínuas de gradis metálicos de contenção (superior e inferior) no limite leste da área principal do evento, com pórtico iluminado de acesso controlado entre os trechos.',
+                dim: '2 Trechos Contínuos (Alt. 2,0m)',
+                pos: 'Divisa Leste da Área Principal',
+                specs: [
+                    ['Gradil Superior', 'Isola o Estacionamento dos Artistas'],
+                    ['Gradil Inferior', 'Isola o pátio em frente à Área de Churrasco'],
+                    ['Pórtico Central', 'Controle de acesso entre os 2 trechos'],
+                    ['Material', 'Grades metálicas galvanizadas']
+                ],
+                target: { x: -15, y: 2, z: 10 },
+                camPos: { x: 18, y: 32, z: 24 }
+            },
+            tenda_churrasco: {
+                badge: 'Área do Churrasco • Setor Amarelo',
+                title: 'Tenda do Churrasco (10m × 10m)',
+                desc: 'Tenda piramidal de grande porte (10x10m) posicionada no canto noroeste do polígono amarelo, equipada com bancadas de corte em madeira nobre, iluminação quente e atendimento.',
+                dim: '10m × 10m (100 m²)',
+                pos: 'Canto Noroeste da Área Amarela',
+                specs: [
+                    ['Dimensão Exata', '10 metros × 10 metros'],
+                    ['Estrutura', 'Cobertura piramidal alta com detalhe laranja'],
+                    ['Posição no Croqui', 'Canto superior esquerdo da área amarela'],
+                    ['Função', 'Corte, preparo e entrega do churrasco']
+                ],
+                target: { x: 6.5, y: 3, z: 53.5 },
+                camPos: { x: -18, y: 24, z: 78 }
+            },
+            fogo_chao: {
+                badge: 'Área do Churrasco • Tradição Gaúcha',
+                title: 'Churrasqueiras de Fogo de Chão',
+                desc: 'Duas trincheiras retangulares paralelas e inclinadas no centro da área amarela, com muretas refratárias, toras de lenha em brasa, chamas vivas, fumaça e costelões assando em espetos verticais.',
+                dim: '2 Valas Paralelas (16m × 3m)',
+                pos: 'Centro da Área Amarela',
+                specs: [
+                    ['Configuração', '2 linhas paralelas inclinadas'],
+                    ['Equipamento', 'Espetos verticais para costelão fogo de chão'],
+                    ['Ambiência', 'Chamas animadas, brasas e fumaça'],
+                    ['Equipe', 'Assadores tradicionais no perímetro']
+                ],
+                target: { x: 16.5, y: 2, z: 70.5 },
+                camPos: { x: 4, y: 18, z: 98 }
+            },
+            giratorias: {
+                badge: 'Área do Churrasco • Inox',
+                title: 'Churrasqueiras Giratórias (2 Unidades)',
+                desc: 'Exatamente 2 churrasqueiras giratórias tipo roda-gigante em aço inox polido, posicionadas na base perpendicular imediatamente à direita das churrasqueiras de fogo de chão.',
+                dim: '2 Unidades (Base Perpendicular)',
+                pos: 'Lado Direito (Leste) do Fogo de Chão',
+                specs: [
+                    ['Quantidade Exata', 'Somente 2 churrasqueiras giratórias'],
+                    ['Posição no Croqui', 'Retângulo marrom à direita do fogo de chão'],
+                    ['Orientação', 'Perpendicular às linhas de fogo de chão'],
+                    ['Mecanismo', 'Roda dupla em inox com 6 grelhas giratórias']
+                ],
+                target: { x: 30.5, y: 2, z: 75.5 },
+                camPos: { x: 50, y: 15, z: 90 }
+            },
+            motorhome: {
+                badge: 'Área do Churrasco • Apoio Sul',
+                title: 'Área de Motorhomes',
+                desc: 'Espaço reservado na borda inferior (sul) do polígono amarelo, abaixo das churrasqueiras de fogo de chão, com motorhomes equipados com toldos, iluminação e área de descanso.',
+                dim: 'Faixa Sul (22m × 5m)',
+                pos: 'Borda Inferior da Área Amarela',
+                specs: [
+                    ['Posição no Croqui', 'Retângulo verde-claro na base sul'],
+                    ['Orientação', 'Paralelo à linha amarela inferior'],
+                    ['Acesso', 'Entrada direta pela curva sul da via'],
+                    ['Finalidade', 'Hospedagem dos assadores e equipe']
+                ],
+                target: { x: 12.5, y: 2, z: 87.5 },
+                camPos: { x: -8, y: 20, z: 115 }
+            },
+            estacionamento: {
+                badge: 'Setor Leste • Contorno Roxo',
+                title: 'Estacionamento Geral',
+                desc: 'Ampla área gramada à direita da estrada interna e acima da área do churrasco (polígono azul com borda roxa no croqui), com veículos 3D detalhados (Sedans, SUVs e Pickups), postes de luz e ilhas de árvores.',
+                dim: '115m × 160m (~18.400 m²)',
+                pos: 'Lado Leste do Terreno',
+                specs: [
+                    ['Demarcação Croqui', 'Polígono azul com contorno roxo'],
+                    ['Capacidade Estimada', '+450 veículos em fileiras organizadas'],
+                    ['Infraestrutura', 'Corredores iluminados + Árvores nativas'],
+                    ['Referência Leste', 'Corredor lateral próximo ao Ohana Krep\'s']
+                ],
+                target: { x: 55, y: 2, z: -5 },
+                camPos: { x: 55, y: 98, z: 88 }
+            },
+            lagoa: {
+                badge: 'Orla Norte & Noroeste • Capão da Canoa',
+                title: 'Lagoa dos Quadros, Trapiche & Rampa Náutica',
+                desc: 'Espelho d\'água de ~120 km² da Lagoa dos Quadros contornando a margem norte e noroeste do Parque Náutico, com o Trapiche Municipal revitalizado e mirante coberto, rampa para embarcações, prainha de água doce com boias, mascote Patonáutico e a Serra do Mar ao fundo.',
+                dim: 'Espelho d\'Água ~120 km²',
+                pos: 'Margem Norte / Noroeste',
+                specs: [
+                    ['Trapiche Municipal', 'Passarela em madeira + Mirante coberto'],
+                    ['Acesso Náutico', 'Rampa de concreto e píer para lanchas/jet-ski'],
+                    ['Prainha da Lagoa', 'Área de banho delimitada + Guarita'],
+                    ['Horizonte Noroeste', 'Vista da Serra do Mar & Pôr do Sol']
+                ],
+                target: { x: -35, y: 2, z: -138 },
+                camPos: { x: -95, y: 28, z: -85 }
+            }
+        };
+
+        // ============================================================================
+        // 2. THREE.JS HIGH-PERFORMANCE RENDERER, SKY DOME & LIGHTING
+        // ============================================================================
+        const container = document.getElementById('canvas-container');
+        const labelsContainer = document.getElementById('labels-container');
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x7dd3fc);
+        scene.fog = new THREE.FogExp2(0xbae6fd, 0.00085);
+
+        const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 1.0, 1800);
+
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            powerPreference: 'high-performance'
+        });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.autoUpdate = false;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05;
+        container.appendChild(renderer.domElement);
+
+        function requestShadowMapUpdate() {
+            if (renderer.shadowMap.enabled) {
+                renderer.shadowMap.needsUpdate = true;
+            }
+        }
+
+        // Quality Mode Toggle (Alta vs Desempenho)
+        let qualityMode = 'high';
+        window.cycleQualityMode = function() {
+            const labelEl = document.getElementById('quality-label');
+            if (qualityMode === 'high') {
+                qualityMode = 'perf';
+                renderer.setPixelRatio(1.0);
+                renderer.shadowMap.enabled = false;
+                if (labelEl) labelEl.textContent = 'Leve';
+            } else {
+                qualityMode = 'high';
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+                renderer.shadowMap.enabled = true;
+                requestShadowMapUpdate();
+                if (labelEl) labelEl.textContent = 'Alta';
+            }
+        };
+
+        // Procedural Atmospheric Sky Dome
+        function createSkyDomeTexture(topColor, midColor, horizonColor) {
+            const c = document.createElement('canvas');
+            c.width = 32;
+            c.height = 512;
+            const ctx = c.getContext('2d');
+            const grad = ctx.createLinearGradient(0, 0, 0, 512);
+            grad.addColorStop(0.0, topColor);
+            grad.addColorStop(0.55, midColor);
+            grad.addColorStop(0.92, horizonColor);
+            grad.addColorStop(1.0, horizonColor);
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 32, 512);
+            const tex = new THREE.CanvasTexture(c);
+            tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        const skyTextures = {
+            day: createSkyDomeTexture('#0284c7', '#38bdf8', '#e0f2fe'),
+            sunset: createSkyDomeTexture('#1e1b4b', '#c2410c', '#fde047'),
+            night: createSkyDomeTexture('#020617', '#0f172a', '#1e293b')
+        };
+
+        const skyDomeMat = new THREE.MeshBasicMaterial({
+            map: skyTextures.day,
+            side: THREE.BackSide,
+            depthWrite: false
+        });
+        const skyDome = new THREE.Mesh(new THREE.SphereGeometry(950, 24, 16), skyDomeMat);
+        scene.add(skyDome);
+
+        // Realistic Lighting Setup
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.58);
+        scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x3f6212, 0.45);
+        scene.add(hemiLight);
+
+        const sunLight = new THREE.DirectionalLight(0xfffbeb, 1.25);
+        sunLight.position.set(-95, 145, 85);
+        sunLight.castShadow = true;
+        sunLight.shadow.mapSize.width = 2048;
+        sunLight.shadow.mapSize.height = 2048;
+        sunLight.shadow.camera.near = 15;
+        sunLight.shadow.camera.far = 420;
+        const d = 175;
+        sunLight.shadow.camera.left = -d;
+        sunLight.shadow.camera.right = d;
+        sunLight.shadow.camera.top = d;
+        sunLight.shadow.camera.bottom = -d;
+        sunLight.shadow.bias = -0.0005;
+        scene.add(sunLight);
+
+        // Stage Dynamic Spotlights & Volumetric Cones
+        const stageSpot1 = new THREE.SpotLight(0x38bdf8, 0, 110, Math.PI / 5, 0.45, 1);
+        stageSpot1.position.set(-72, 10.5, -39);
+        stageSpot1.target.position.set(-69, 0, -5);
+        scene.add(stageSpot1);
+        scene.add(stageSpot1.target);
+
+        const stageSpot2 = new THREE.SpotLight(0xf43f5e, 0, 110, Math.PI / 5, 0.45, 1);
+        stageSpot2.position.set(-58, 10.5, -39);
+        stageSpot2.target.position.set(-61, 0, -5);
+        scene.add(stageSpot2);
+        scene.add(stageSpot2.target);
+
+        const volumetricBeamsGroup = new THREE.Group();
+        const beamMat1 = new THREE.MeshBasicMaterial({
+            color: 0x38bdf8, transparent: true, opacity: 0.08,
+            side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending
+        });
+        const beamMat2 = new THREE.MeshBasicMaterial({
+            color: 0xf43f5e, transparent: true, opacity: 0.08,
+            side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending
+        });
+        const beamMat3 = new THREE.MeshBasicMaterial({
+            color: 0xfacc15, transparent: true, opacity: 0.07,
+            side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending
+        });
+
+        const beamGeo = new THREE.ConeGeometry(8.5, 34, 20, 1, true);
+        beamGeo.translate(0, -17, 0);
+
+        const stageBeams = [];
+        [
+            { x: -72, z: -38, mat: beamMat1, rotX: 0.72, rotZ: -0.15 },
+            { x: -65, z: -38, mat: beamMat3, rotX: 0.78, rotZ: 0.0 },
+            { x: -58, z: -38, mat: beamMat2, rotX: 0.72, rotZ: 0.15 }
+        ].forEach(cfg => {
+            const b = new THREE.Mesh(beamGeo, cfg.mat);
+            b.position.set(cfg.x, 9.2, cfg.z);
+            b.rotation.x = cfg.rotX;
+            b.rotation.z = cfg.rotZ;
+            volumetricBeamsGroup.add(b);
+            stageBeams.push(b);
+        });
+        scene.add(volumetricBeamsGroup);
+
+        const bbqFireLight = new THREE.PointLight(0xff5500, 1.6, 42);
+        bbqFireLight.position.set(17, 3.5, 71);
+        scene.add(bbqFireLight);
+
+        const pavilionWarmLight = new THREE.PointLight(0xfef08a, 0.9, 65);
+        pavilionWarmLight.position.set(-65, 6.5, -10);
+        scene.add(pavilionWarmLight);
+
+        const croquiLinesGroup = new THREE.Group();
+        scene.add(croquiLinesGroup);
+
+        const festivalBulbsMaterials = [];
+        const interactiveMeshes = [];
+        const animatedWheels = [];
+        const flameMeshes = [];
+        const emberMeshes = [];
+
+        function registerInteractive(object3D, key) {
+            object3D.traverse((child) => {
+                if (child.isMesh) {
+                    child.userData.elementKey = key;
+                    interactiveMeshes.push(child);
+                }
+            });
+        }
+
+        // ============================================================================
+        // 3. PROCEDURAL TEXTURES (GRASS, PLANETCHÊ LED WALL & BAITACA BUS)
+        // ============================================================================
+        function createRealisticGrassTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#365828';
+            ctx.fillRect(0, 0, 512, 512);
+
+            for (let i = 0; i < 16000; i++) {
+                const x = Math.random() * 512;
+                const y = Math.random() * 512;
+                ctx.fillStyle = Math.random() > 0.5 ? 'rgba(68, 108, 48, 0.32)' : 'rgba(28, 48, 20, 0.32)';
+                ctx.fillRect(x, y, 3, 3);
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping;
+            tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(28, 28);
+            tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        function createPlanetcheLedTexture(isHeader = false) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = isHeader ? 192 : 512;
+            const ctx = canvas.getContext('2d');
+            const W = canvas.width;
+            const H = canvas.height;
+
+            const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+            bgGrad.addColorStop(0, '#020617');
+            bgGrad.addColorStop(0.5, '#0f172a');
+            bgGrad.addColorStop(1, '#022c22');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, W, H);
+
+            const stripeGrad = ctx.createLinearGradient(0, 0, W, 0);
+            stripeGrad.addColorStop(0, '#16a34a');
+            stripeGrad.addColorStop(0.5, '#dc2626');
+            stripeGrad.addColorStop(1, '#eab308');
+            ctx.fillStyle = stripeGrad;
+            ctx.fillRect(0, 0, W, isHeader ? 10 : 16);
+            ctx.fillRect(0, H - (isHeader ? 10 : 16), W, isHeader ? 10 : 16);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            if (isHeader) {
+                ctx.font = '900 54px Inter, sans-serif';
+                ctx.fillStyle = '#facc15';
+                ctx.shadowColor = 'rgba(250, 204, 21, 0.6)';
+                ctx.shadowBlur = 14;
+                ctx.fillText('PLANETCHÊ • 20 E 21 DE NOVEMBRO DE 2026', W / 2, H / 2);
+            } else {
+                const glow = ctx.createRadialGradient(W / 2, H * 0.42, 20, W / 2, H * 0.42, 420);
+                glow.addColorStop(0, 'rgba(16, 185, 129, 0.28)');
+                glow.addColorStop(0.6, 'rgba(234, 179, 8, 0.12)');
+                glow.addColorStop(1, 'rgba(2, 6, 23, 0)');
+                ctx.fillStyle = glow;
+                ctx.fillRect(0, 0, W, H);
+
+                ctx.font = '800 30px Inter, sans-serif';
+                ctx.fillStyle = '#34d399';
+                ctx.fillText('PARQUE NÁUTICO LAGOA DOS QUADROS • CAPÃO DA CANOA', W / 2, H * 0.20);
+
+                ctx.save();
+                ctx.font = '900 132px Inter, Impact, sans-serif';
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowColor = '#059669';
+                ctx.shadowBlur = 28;
+                ctx.fillText('PLANETCHÊ', W / 2, H * 0.48);
+                ctx.restore();
+
+                ctx.fillStyle = 'rgba(234, 179, 8, 0.95)';
+                ctx.beginPath();
+                ctx.roundRect(W / 2 - 330, H * 0.69, 660, 78, 18);
+                ctx.fill();
+
+                ctx.font = '900 40px Inter, sans-serif';
+                ctx.fillStyle = '#09090b';
+                ctx.fillText('20 E 21 DE NOVEMBRO DE 2026', W / 2, H * 0.69 + 40);
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        function createBaitacaBusTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = '#09090b';
+            ctx.fillRect(0, 0, 1024, 256);
+
+            const grad = ctx.createRadialGradient(620, 130, 10, 620, 130, 320);
+            grad.addColorStop(0, 'rgba(220, 38, 38, 0.85)');
+            grad.addColorStop(0.5, 'rgba(180, 83, 9, 0.45)');
+            grad.addColorStop(1, 'rgba(9, 9, 11, 0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 1024, 256);
+
+            const greenGrad = ctx.createLinearGradient(750, 0, 1024, 256);
+            greenGrad.addColorStop(0, 'rgba(22, 163, 74, 0.5)');
+            greenGrad.addColorStop(1, 'rgba(9, 9, 11, 0)');
+            ctx.fillStyle = greenGrad;
+            ctx.fillRect(700, 0, 324, 256);
+
+            ctx.strokeStyle = '#eab308';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(40, 210);
+            ctx.bezierCurveTo(220, 210, 260, 190, 290, 30);
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.78)';
+            ctx.fillRect(30, 28, 235, 95);
+            ctx.strokeStyle = '#d4d4d8';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(30, 28, 235, 95);
+
+            ctx.save();
+            ctx.font = '900 84px Inter, Impact, sans-serif';
+            ctx.fillStyle = '#fef08a';
+            ctx.shadowColor = '#000000';
+            ctx.shadowBlur = 12;
+            ctx.fillText('BAITACA', 380, 155);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#713f12';
+            ctx.strokeText('BAITACA', 380, 155);
+            ctx.restore();
+
+            ctx.font = '800 26px Inter, sans-serif';
+            ctx.fillStyle = '#f59e0b';
+            ctx.fillText('DO FUNDO DA GROTA', 485, 202);
+
+            for (let x = 260; x < 960; x += 90) {
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(x, 215, 22, 7);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(x + 22, 215, 22, 7);
+            }
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.encoding = THREE.sRGBEncoding;
+            return tex;
+        }
+
+        // ============================================================================
+        // 4. TERRAIN, REALISTIC LAGOA DOS QUADROS GEOGRAPHY, ROADS & CROQUI POLYGONS
+        // ============================================================================
+        const grassTexture = createRealisticGrassTexture();
+
+        const baseBoardGeo = new THREE.BoxGeometry(820, 7, 680);
+        const baseBoardMat = new THREE.MeshStandardMaterial({ color: 0x091526, roughness: 0.85 });
+        const baseBoard = new THREE.Mesh(baseBoardGeo, baseBoardMat);
+        baseBoard.position.set(-40, -3.8, -85);
+        scene.add(baseBoard);
+
+        const groundGeo = new THREE.PlaneGeometry(360, 265);
+        const groundMat = new THREE.MeshStandardMaterial({
+            map: grassTexture,
+            roughness: 0.92,
+            metalness: 0.02
+        });
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.set(10, 0, 18);
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        const lagoonGroup = new THREE.Group();
+
+        const waterSurfaceMat = new THREE.MeshStandardMaterial({
+            color: 0x0369a1,
+            roughness: 0.16,
+            metalness: 0.68
+        });
+        const northLagoonWater = new THREE.Mesh(new THREE.PlaneGeometry(810, 340), waterSurfaceMat);
+        northLagoonWater.rotation.x = -Math.PI / 2;
+        northLagoonWater.position.set(-40, -0.12, -280);
+        lagoonGroup.add(northLagoonWater);
+
+        const westLagoonWater = new THREE.Mesh(new THREE.PlaneGeometry(270, 340), waterSurfaceMat);
+        westLagoonWater.rotation.x = -Math.PI / 2;
+        westLagoonWater.position.set(-305, -0.12, -55);
+        lagoonGroup.add(westLagoonWater);
+
+        const shallowWaterMat = new THREE.MeshStandardMaterial({
+            color: 0x0284c7,
+            roughness: 0.22,
+            metalness: 0.45,
+            transparent: true,
+            opacity: 0.85
+        });
+        const shallowShelf = new THREE.Mesh(new THREE.PlaneGeometry(375, 26), shallowWaterMat);
+        shallowShelf.rotation.x = -Math.PI / 2;
+        shallowShelf.position.set(5, -0.05, -124);
+        lagoonGroup.add(shallowShelf);
+
+        const prainhaSandMat = new THREE.MeshStandardMaterial({ color: 0xdcc7aa, roughness: 0.92 });
+        const prainhaShore = new THREE.Mesh(new THREE.PlaneGeometry(360, 14), prainhaSandMat);
+        prainhaShore.rotation.x = -Math.PI / 2;
+        prainhaShore.position.set(10, 0.03, -112);
+        prainhaShore.receiveShadow = true;
+        lagoonGroup.add(prainhaShore);
+
+        const calcadaoMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(310, 0.12, 3.6),
+            new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.8 })
+        );
+        calcadaoMesh.position.set(-5, 0.06, -105.5);
+        calcadaoMesh.receiveShadow = true;
+        lagoonGroup.add(calcadaoMesh);
+
+        const cicloviaMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(310, 0.14, 1.4),
+            new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.75 })
+        );
+        cicloviaMesh.position.set(-5, 0.07, -103.8);
+        lagoonGroup.add(cicloviaMesh);
+
+        const woodPierMat = new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.82 });
+        const woodRailMat = new THREE.MeshStandardMaterial({ color: 0x785238, roughness: 0.78 });
+        const miranteRoofMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.65 });
+
+        const trapicheGroup = new THREE.Group();
+        trapicheGroup.position.set(-42, 0, -112);
+
+        const mainWalkway = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.28, 48), woodPierMat);
+        mainWalkway.position.set(0, 1.15, -24);
+        mainWalkway.castShadow = true;
+        trapicheGroup.add(mainWalkway);
+
+        [-2.15, 2.15].forEach(rx => {
+            const topRail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 46), woodRailMat);
+            topRail.position.set(rx, 2.05, -23);
+            trapicheGroup.add(topRail);
+        });
+
+        for (let pz = -4; pz >= -46; pz -= 6) {
+            [-1.9, 1.9].forEach(px => {
+                const pile = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 2.6, 6), woodPierMat);
+                pile.position.set(px, 0.3, pz);
+                trapicheGroup.add(pile);
+            });
+        }
+
+        const miranteDeck = new THREE.Mesh(new THREE.BoxGeometry(11.5, 0.32, 11.5), woodPierMat);
+        miranteDeck.position.set(0, 1.18, -52);
+        miranteDeck.castShadow = true;
+        trapicheGroup.add(miranteDeck);
+
+        [[-4.8, -47.2], [4.8, -47.2], [-4.8, -56.8], [4.8, -56.8]].forEach(([mx, mz]) => {
+            const mCol = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 3.4, 8), woodRailMat);
+            mCol.position.set(mx, 2.85, mz);
+            trapicheGroup.add(mCol);
+        });
+
+        const miranteRoof = new THREE.Mesh(new THREE.ConeGeometry(8.8, 2.8, 4), miranteRoofMat);
+        miranteRoof.position.set(0, 5.9, -52);
+        miranteRoof.rotation.y = Math.PI / 4;
+        miranteRoof.castShadow = true;
+        trapicheGroup.add(miranteRoof);
+
+        lagoonGroup.add(trapicheGroup);
+
+        const rampGroup = new THREE.Group();
+        rampGroup.position.set(22, 0, -110);
+
+        const concreteRamp = new THREE.Mesh(
+            new THREE.BoxGeometry(9.5, 0.25, 24),
+            new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.85 })
+        );
+        concreteRamp.position.set(0, 0.05, -10);
+        concreteRamp.rotation.x = -0.05;
+        rampGroup.add(concreteRamp);
+
+        const servicePier = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.25, 28), woodPierMat);
+        servicePier.position.set(6.8, 0.75, -14);
+        servicePier.castShadow = true;
+        rampGroup.add(servicePier);
+
+        const boatHullMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25 });
+        const boatCanopyMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.4 });
+        [
+            { x: 10.5, z: -22, rot: 0.08, scale: 1.0 },
+            { x: 11.2, z: -32, rot: -0.15, scale: 0.9 },
+            { x: -58, z: -145, rot: 0.65, scale: 1.15 }
+        ].forEach(b => {
+            const boat = new THREE.Group();
+            const hull = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.9, 6.8), boatHullMat);
+            hull.position.y = 0.35;
+            boat.add(hull);
+            const canopy = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.14, 3.2), boatCanopyMat);
+            canopy.position.set(0, 1.55, -0.3);
+            boat.add(canopy);
+            boat.position.set(b.x, 0, b.z);
+            boat.rotation.y = b.rot;
+            boat.scale.setScalar(b.scale);
+            lagoonGroup.add(boat);
+        });
+
+        lagoonGroup.add(rampGroup);
+
+        const buoyMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+        const buoyGeo = new THREE.SphereGeometry(0.38, 8, 8);
+        for (let bx = -28; bx <= 6; bx += 4.2) {
+            const buoy = new THREE.Mesh(buoyGeo, buoyMat);
+            buoy.position.set(bx, 0.1, -126 + Math.sin(bx * 0.1) * 1.5);
+            lagoonGroup.add(buoy);
+        }
+
+        const guarita = new THREE.Group();
+        guarita.position.set(-14, 0, -109);
+        const guaritaCabin = new THREE.Mesh(
+            new THREE.BoxGeometry(2.2, 2.2, 2.2),
+            new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 })
+        );
+        guaritaCabin.position.y = 3.2;
+        guarita.add(guaritaCabin);
+        const guaritaRoof = new THREE.Mesh(
+            new THREE.BoxGeometry(2.8, 0.25, 2.8),
+            new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.4 })
+        );
+        guaritaRoof.position.y = 4.4;
+        guarita.add(guaritaRoof);
+        lagoonGroup.add(guarita);
+
+        const patoGroup = new THREE.Group();
+        patoGroup.position.set(-34, 0, -108);
+        patoGroup.rotation.y = 0.4;
+        const duckYellowMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.35 });
+        const duckBeakMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.4 });
+        const duckBody = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 10), duckYellowMat);
+        duckBody.scale.set(1.0, 0.85, 1.35);
+        duckBody.position.y = 1.0;
+        patoGroup.add(duckBody);
+        const duckHead = new THREE.Mesh(new THREE.SphereGeometry(0.68, 12, 10), duckYellowMat);
+        duckHead.position.set(0, 1.95, 0.65);
+        patoGroup.add(duckHead);
+        const duckBeak = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.6, 8), duckBeakMat);
+        duckBeak.rotation.x = Math.PI / 2;
+        duckBeak.position.set(0, 1.9, 1.35);
+        patoGroup.add(duckBeak);
+        lagoonGroup.add(patoGroup);
+
+        const mountainMat = new THREE.MeshStandardMaterial({
+            color: 0x1e3a5f,
+            roughness: 0.95,
+            metalness: 0.05
+        });
+        [
+            { x: -380, z: -410, r: 165, h: 68 },
+            { x: -240, z: -425, r: 190, h: 82 },
+            { x: -80, z: -435, r: 175, h: 64 },
+            { x: 90, z: -430, r: 160, h: 55 },
+            { x: -420, z: -260, r: 145, h: 58 }
+        ].forEach(mp => {
+            const mCone = new THREE.Mesh(new THREE.ConeGeometry(mp.r, mp.h, 7), mountainMat);
+            mCone.position.set(mp.x, mp.h / 2 - 2, mp.z);
+            mCone.scale.set(1.35, 1, 0.75);
+            lagoonGroup.add(mCone);
+        });
+
+        const lagoonHitBox = new THREE.Mesh(
+            new THREE.BoxGeometry(280, 2, 85),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        lagoonHitBox.position.set(-20, 1, -135);
+        lagoonGroup.add(lagoonHitBox);
+        registerInteractive(lagoonHitBox, 'lagoa');
+        registerInteractive(trapicheGroup, 'lagoa');
+
+        scene.add(lagoonGroup);
+
+        function createGroundPolygon(points2D, fillColor, fillOpacity, borderColor, yOffset = 0.08, borderThickness = 0.45, targetBorderGroup = null) {
+            const group = new THREE.Group();
+            const shape = new THREE.Shape();
+            shape.moveTo(points2D[0][0], -points2D[0][1]);
+            for (let i = 1; i < points2D.length; i++) {
+                shape.lineTo(points2D[i][0], -points2D[i][1]);
+            }
+            shape.closePath();
+
+            if (fillOpacity > 0) {
+                const geo = new THREE.ShapeGeometry(shape);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: fillColor,
+                    transparent: fillOpacity < 1,
+                    opacity: fillOpacity,
+                    roughness: 0.9,
+                    side: THREE.DoubleSide
+                });
+                const mesh = new THREE.Mesh(geo, mat);
+                mesh.rotation.x = -Math.PI / 2;
+                mesh.position.y = yOffset;
+                mesh.receiveShadow = true;
+                group.add(mesh);
+            }
+
+            if (borderColor !== null) {
+                const borderContainer = targetBorderGroup || group;
+                const borderMat = new THREE.MeshBasicMaterial({
+                    color: borderColor,
+                    transparent: true,
+                    opacity: 0.78
+                });
+                for (let i = 0; i < points2D.length; i++) {
+                    const p1 = points2D[i];
+                    const p2 = points2D[(i + 1) % points2D.length];
+                    const dx = p2[0] - p1[0];
+                    const dz = p2[1] - p1[1];
+                    const len = Math.hypot(dx, dz);
+                    const segGeo = new THREE.BoxGeometry(len + borderThickness * 0.4, 0.14, borderThickness);
+                    const seg = new THREE.Mesh(segGeo, borderMat);
+                    seg.position.set((p1[0] + p2[0]) / 2, yOffset + 0.06, (p1[1] + p2[1]) / 2);
+                    seg.rotation.y = -Math.atan2(dz, dx);
+                    borderContainer.add(seg);
+                }
+            }
+            return group;
+        }
+
+        // --- ROADS ---
+        scene.add(createGroundPolygon([[-14, -112], [-5, -112], [-5, 115], [-14, 115]], 0x856d52, 1.0, null, 0.04));
+
+        [-11.2, -7.8].forEach(rx => {
+            const track = new THREE.Mesh(
+                new THREE.PlaneGeometry(0.9, 220),
+                new THREE.MeshStandardMaterial({ color: 0x6e5840, roughness: 0.95 })
+            );
+            track.rotation.x = -Math.PI / 2;
+            track.position.set(rx, 0.055, 2);
+            track.receiveShadow = true;
+            scene.add(track);
+        });
+
+        scene.add(createGroundPolygon([[117, -112], [125, -112], [125, 125], [117, 125]], 0x80674c, 1.0, null, 0.04));
+
+        const southCurveRoad = [
+            [-10, 92], [18, 108], [35, 92], [60, 88], [117, 102],
+            [117, 110], [58, 96], [38, 100], [20, 117], [-14, 100]
+        ];
+        scene.add(createGroundPolygon(southCurveRoad, 0x80674c, 1.0, null, 0.04));
+
+        // Highway RS-389
+        const rs389Group = new THREE.Group();
+        const roadLength = 175;
+        const roadAsphalt = new THREE.Mesh(
+            new THREE.BoxGeometry(roadLength, 0.18, 14),
+            new THREE.MeshStandardMaterial({ color: 0x27303f, roughness: 0.82 })
+        );
+        roadAsphalt.receiveShadow = true;
+        rs389Group.add(roadAsphalt);
+
+        const serviceRoad = new THREE.Mesh(
+            new THREE.BoxGeometry(roadLength, 0.14, 6),
+            new THREE.MeshStandardMaterial({ color: 0x525e6e, roughness: 0.88 })
+        );
+        serviceRoad.position.z = -12.5;
+        serviceRoad.receiveShadow = true;
+        rs389Group.add(serviceRoad);
+
+        const yellowLineMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+        const whiteLineMat = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+        [-6.4, 6.4].forEach(ez => {
+            const edge = new THREE.Mesh(new THREE.BoxGeometry(roadLength, 0.2, 0.25), whiteLineMat);
+            edge.position.set(0, 0.01, ez);
+            rs389Group.add(edge);
+        });
+        for (let x = -roadLength / 2 + 6; x < roadLength / 2 - 6; x += 10) {
+            const dash = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.2, 0.3), yellowLineMat);
+            dash.position.set(x, 0.01, 0);
+            rs389Group.add(dash);
+        }
+
+        const guardRailMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.75, roughness: 0.3 });
+        const guardRailBeam = new THREE.Mesh(new THREE.BoxGeometry(roadLength, 0.35, 0.15), guardRailMat);
+        guardRailBeam.position.set(0, 0.65, 7.6);
+        rs389Group.add(guardRailBeam);
+
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.7, roughness: 0.3 });
+        const bulbMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+        festivalBulbsMaterials.push(bulbMat);
+
+        for (let x = -70; x <= 70; x += 28) {
+            const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 8.5, 8), poleMat);
+            pole.position.set(x, 4.25, -8.2);
+            pole.castShadow = true;
+            rs389Group.add(pole);
+
+            const arm = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.15, 2.6), poleMat);
+            arm.position.set(x, 8.4, -7.0);
+            rs389Group.add(arm);
+
+            const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.18, 0.9), bulbMat);
+            lamp.position.set(x, 8.3, -5.8);
+            rs389Group.add(lamp);
+        }
+
+        rs389Group.position.set(-72, 0.05, 86);
+        rs389Group.rotation.y = -0.46;
+        scene.add(rs389Group);
+
+        // ============================================================================
+        // 5. SECTOR 1: ÁREA PRINCIPAL DO EVENTO
+        // ============================================================================
+        const mainAreaPoints = [[-112, -46], [-15, -58], [-15, 84], [-112, 34]];
+        scene.add(createGroundPolygon(mainAreaPoints, 0x937b60, 0.95, null, 0.05));
+        croquiLinesGroup.add(createGroundPolygon(mainAreaPoints, 0x3b82f6, 0.0, 0x2563eb, 0.12, 0.85));
+
+        // --- 1A. CAMARINS ---
+        const camarimGroup = new THREE.Group();
+        camarimGroup.position.set(-65, 0, -51);
+        camarimGroup.rotation.y = -0.10;
+
+        createGroundPolygon([[-9.5, -2.5], [9.5, -2.5], [9.5, 2.5], [-9.5, 2.5]], 0x1d4ed8, 0.22, 0x1d4ed8, 0.14, 0.35, croquiLinesGroup);
+
+        const camDeck = new THREE.Mesh(
+            new THREE.BoxGeometry(19.2, 0.3, 6.8),
+            new THREE.MeshStandardMaterial({ color: 0x5c4033, roughness: 0.85 })
+        );
+        camDeck.position.set(0, 0.15, 1.2);
+        camDeck.receiveShadow = true;
+        camarimGroup.add(camDeck);
+
+        const camBody = new THREE.Mesh(
+            new THREE.BoxGeometry(18, 3.5, 4.0),
+            new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35, metalness: 0.15 })
+        );
+        camBody.position.y = 1.9;
+        camBody.castShadow = true;
+        camBody.receiveShadow = true;
+        camarimGroup.add(camBody);
+
+        const camRoof = new THREE.Mesh(
+            new THREE.BoxGeometry(18.5, 0.4, 4.5),
+            new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.4 })
+        );
+        camRoof.position.y = 3.75;
+        camarimGroup.add(camRoof);
+
+        const glassDoorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, metalness: 0.85 });
+        const acUnitMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.4 });
+        [-5.5, 0, 5.5].forEach(dx => {
+            const door = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.4, 0.12), glassDoorMat);
+            door.position.set(dx, 1.35, 2.02);
+            camarimGroup.add(door);
+
+            const ac = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.65, 0.4), acUnitMat);
+            ac.position.set(dx + 2.2, 2.8, -2.18);
+            camarimGroup.add(ac);
+        });
+
+        registerInteractive(camarimGroup, 'camarins');
+        scene.add(camarimGroup);
+
+        // --- 1B. PALCO PRINCIPAL ---
+        const palcoGroup = new THREE.Group();
+        palcoGroup.position.set(-65, 0, -42);
+        palcoGroup.rotation.y = -0.06;
+
+        createGroundPolygon([[-10.5, -5.5], [10.5, -5.5], [10.5, 5.5], [-10.5, 5.5]], 0xdc2626, 0.3, 0xdc2626, 0.14, 0.4, croquiLinesGroup);
+
+        const stageDeckMat = new THREE.MeshStandardMaterial({ color: 0x18181b, roughness: 0.65 });
+        const stageDeck = new THREE.Mesh(new THREE.BoxGeometry(18.4, 1.5, 9.2), stageDeckMat);
+        stageDeck.position.y = 0.75;
+        stageDeck.castShadow = true;
+        stageDeck.receiveShadow = true;
+        palcoGroup.add(stageDeck);
+
+        const stageCarpet = new THREE.Mesh(
+            new THREE.BoxGeometry(17.8, 0.06, 2.2),
+            new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.8 })
+        );
+        stageCarpet.position.set(0, 1.53, 3.3);
+        palcoGroup.add(stageCarpet);
+
+        const stairsMat = new THREE.MeshStandardMaterial({ color: 0x27272a, roughness: 0.7 });
+        for (let s = 0; s < 4; s++) {
+            const stepBack = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.35, 0.45), stairsMat);
+            stepBack.position.set(0, 0.18 + s * 0.35, -4.8 - (3 - s) * 0.42);
+            palcoGroup.add(stepBack);
+
+            const stepRight = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.35, 2.2), stairsMat);
+            stepRight.position.set(9.4 + (3 - s) * 0.42, 0.18 + s * 0.35, -1.5);
+            palcoGroup.add(stepRight);
+        }
+
+        const stageRailMat = new THREE.MeshStandardMaterial({ color: 0x3f3f46, metalness: 0.7, roughness: 0.3 });
+        const leftRail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.0, 8.6), stageRailMat);
+        leftRail.position.set(-9.0, 2.0, -0.1);
+        palcoGroup.add(leftRail);
+
+        const speakerMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.45 });
+        for (let mx = -6.0; mx <= 6.0; mx += 3.0) {
+            const mon = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.42, 0.58), speakerMat);
+            mon.position.set(mx, 1.72, 4.15);
+            mon.rotation.x = -0.35;
+            palcoGroup.add(mon);
+        }
+        [-8.8, -7.4, 7.4, 8.8].forEach(subX => {
+            const subStack = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.25, 1.1), speakerMat);
+            subStack.position.set(subX, 0.65, 5.25);
+            subStack.castShadow = true;
+            palcoGroup.add(subStack);
+        });
+
+        const trussMat = new THREE.MeshStandardMaterial({ color: 0xd4d4d8, metalness: 0.85, roughness: 0.2 });
+        [[-8.6, -4.1], [8.6, -4.1], [-8.6, 4.1], [8.6, 4.1]].forEach(([tx, tz]) => {
+            const tower = new THREE.Mesh(new THREE.BoxGeometry(0.72, 8.2, 0.72), trussMat);
+            tower.position.set(tx, 5.5, tz);
+            tower.castShadow = true;
+            palcoGroup.add(tower);
+        });
+
+        const frontTruss = new THREE.Mesh(new THREE.BoxGeometry(21.6, 0.68, 0.68), trussMat);
+        frontTruss.position.set(0, 9.3, 4.1);
+        palcoGroup.add(frontTruss);
+
+        const backTruss = new THREE.Mesh(new THREE.BoxGeometry(18.0, 0.68, 0.68), trussMat);
+        backTruss.position.set(0, 9.3, -4.1);
+        palcoGroup.add(backTruss);
+
+        [-8.6, 0, 8.6].forEach(cx => {
+            const crossTruss = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 8.8), trussMat);
+            crossTruss.position.set(cx, 9.3, 0);
+            palcoGroup.add(crossTruss);
+        });
+
+        const stageRoofGroup = new THREE.Group();
+        const roofCanopy = new THREE.Mesh(
+            new THREE.BoxGeometry(20.4, 0.35, 10.2),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 })
+        );
+        roofCanopy.castShadow = true;
+        roofCanopy.receiveShadow = true;
+        stageRoofGroup.add(roofCanopy);
+
+        const stageValance = new THREE.Mesh(
+            new THREE.BoxGeometry(20.5, 0.75, 10.3),
+            new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6 })
+        );
+        stageValance.position.y = -0.35;
+        stageRoofGroup.add(stageValance);
+
+        stageRoofGroup.position.set(0, 9.85, 0);
+        stageRoofGroup.rotation.x = -0.05;
+        palcoGroup.add(stageRoofGroup);
+
+        const mainLedTex = createPlanetcheLedTexture(false);
+        const headerLedTex = createPlanetcheLedTexture(true);
+
+        const ledCabinetMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.4 });
+        const mainLedFrontMat = new THREE.MeshBasicMaterial({ map: mainLedTex });
+        const headerLedFrontMat = new THREE.MeshBasicMaterial({ map: headerLedTex });
+
+        const ledWall = new THREE.Mesh(
+            new THREE.BoxGeometry(15.2, 6.2, 0.45),
+            [ledCabinetMat, ledCabinetMat, ledCabinetMat, ledCabinetMat, mainLedFrontMat, ledCabinetMat]
+        );
+        ledWall.position.set(0, 5.1, -3.55);
+        ledWall.castShadow = true;
+        palcoGroup.add(ledWall);
+
+        const headerBanner = new THREE.Mesh(
+            new THREE.BoxGeometry(16.6, 1.45, 0.35),
+            [ledCabinetMat, ledCabinetMat, ledCabinetMat, ledCabinetMat, headerLedFrontMat, ledCabinetMat]
+        );
+        headerBanner.position.set(0, 9.15, 4.35);
+        palcoGroup.add(headerBanner);
+
+        [-9.8, 9.8].forEach(sx => {
+            const arrayGroup = new THREE.Group();
+            arrayGroup.position.set(sx, 8.4, 4.1);
+            for (let b = 0; b < 7; b++) {
+                const box = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.48, 0.92), speakerMat);
+                box.position.y = -b * 0.54;
+                box.position.z = -Math.pow(b, 1.35) * 0.05;
+                box.rotation.x = b * 0.06;
+                arrayGroup.add(box);
+            }
+            palcoGroup.add(arrayGroup);
+        });
+
+        registerInteractive(palcoGroup, 'palco');
+        scene.add(palcoGroup);
+
+        // --- 1C. PAVILHÃO PRINCIPAL ---
+        const pavilhaoGroup = new THREE.Group();
+        pavilhaoGroup.position.set(-65, 0, -10);
+        pavilhaoGroup.rotation.y = -0.05;
+
+        createGroundPolygon([[-10, -25], [10, -25], [10, 25], [-10, 25]], 0xfacc15, 0.1, 0xfacc15, 0.14, 0.45, croquiLinesGroup);
+
+        const pavFloor = new THREE.Mesh(
+            new THREE.BoxGeometry(19.8, 0.18, 49.8),
+            new THREE.MeshStandardMaterial({ color: 0x645d55, roughness: 0.8 })
+        );
+        pavFloor.position.y = 0.09;
+        pavFloor.receiveShadow = true;
+        pavilhaoGroup.add(pavFloor);
+
+        const pillarMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.7, roughness: 0.25 });
+        for (let z = -24; z <= 24; z += 6) {
+            [-9.6, 9.6].forEach(x => {
+                const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.32, 5.2, 0.32), pillarMat);
+                pillar.position.set(x, 2.6, z);
+                pillar.castShadow = true;
+                pavilhaoGroup.add(pillar);
+            });
+        }
+
+        const roofHeight = 3.6;
+        const eavesY = 5.2;
+        const pavRoofGeom = new THREE.BufferGeometry();
+        const hw = 10.35, hl = 25.35, ridgeL = 18.2;
+        const vertices = new Float32Array([
+            -hw, eavesY, -hl,   -hw, eavesY, hl,    0, eavesY + roofHeight, ridgeL,
+            -hw, eavesY, -hl,    0, eavesY + roofHeight, ridgeL,  0, eavesY + roofHeight, -ridgeL,
+            hw, eavesY, hl,     hw, eavesY, -hl,    0, eavesY + roofHeight, -ridgeL,
+            hw, eavesY, hl,      0, eavesY + roofHeight, -ridgeL, 0, eavesY + roofHeight, ridgeL,
+            -hw, eavesY, -hl,    0, eavesY + roofHeight, -ridgeL, hw, eavesY, -hl,
+            hw, eavesY, hl,      0, eavesY + roofHeight, ridgeL,  -hw, eavesY, hl
+        ]);
+        pavRoofGeom.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+        pavRoofGeom.computeVertexNormals();
+
+        const pavRoofMesh = new THREE.Mesh(
+            pavRoofGeom,
+            new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.32, metalness: 0.05, side: THREE.DoubleSide })
+        );
+        pavRoofMesh.castShadow = true;
+        pavRoofMesh.receiveShadow = true;
+        pavilhaoGroup.add(pavRoofMesh);
+
+        registerInteractive(pavilhaoGroup, 'pavilhao');
+        scene.add(pavilhaoGroup);
+
+        // --- 1D. ESTACIONAMENTO DOS ARTISTAS & ÔNIBUS DO BAITACA ---
+        const artistZoneGroup = new THREE.Group();
+        const artistPolyPts = [[-51, -54], [-16, -58], [-16, -26], [-51, -24]];
+        artistZoneGroup.add(createGroundPolygon(artistPolyPts, 0x5c4033, 0.88, null, 0.08));
+        createGroundPolygon(artistPolyPts, 0x5c4033, 0.0, 0x3e2723, 0.14, 0.4, croquiLinesGroup);
+
+        createGroundPolygon([[-45, -32], [-27, -33], [-27, -26], [-45, -25]], 0xfacc15, 0.12, 0xfacc15, 0.15, 0.4, croquiLinesGroup);
+
+        const baitacaBus = new THREE.Group();
+        baitacaBus.position.set(-36, 0, -29);
+        baitacaBus.rotation.y = -0.06;
+
+        const busSideTex = createBaitacaBusTexture();
+        const busBlackMat = new THREE.MeshStandardMaterial({ color: 0x09090b, roughness: 0.22, metalness: 0.45 });
+        const busSideMat = new THREE.MeshStandardMaterial({ map: busSideTex, roughness: 0.22, metalness: 0.3 });
+        const busWindshieldMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.08, metalness: 0.9 });
+
+        const busBody = new THREE.Mesh(
+            new THREE.BoxGeometry(14.2, 3.65, 2.95),
+            [busBlackMat, busBlackMat, busBlackMat, busBlackMat, busSideMat, busSideMat]
+        );
+        busBody.position.y = 2.15;
+        busBody.castShadow = true;
+        baitacaBus.add(busBody);
+
+        const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.18, 2.1, 2.7), busWindshieldMat);
+        windshield.position.set(-7.08, 2.45, 0);
+        baitacaBus.add(windshield);
+
+        const headlightMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe });
+        const taillightMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+        [-1.05, 1.05].forEach(lz => {
+            const hl = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.32, 0.45), headlightMat);
+            hl.position.set(-7.1, 1.05, lz);
+            baitacaBus.add(hl);
+
+            const tl = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.45, 0.4), taillightMat);
+            tl.position.set(7.1, 1.15, lz);
+            baitacaBus.add(tl);
+        });
+
+        const acPod = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.38, 1.9), busBlackMat);
+        acPod.position.set(0.8, 4.1, 0);
+        baitacaBus.add(acPod);
+
+        const wheelGeo = new THREE.CylinderGeometry(0.56, 0.56, 0.42, 16);
+        const tireMat = new THREE.MeshStandardMaterial({ color: 0x171717, roughness: 0.9 });
+        const rimMat = new THREE.MeshStandardMaterial({ color: 0xe4e4e7, metalness: 0.85, roughness: 0.15 });
+        [[-4.6, 1.42], [-4.6, -1.42], [3.1, 1.42], [3.1, -1.42], [4.5, 1.42], [4.5, -1.42]].forEach(([wx, wz]) => {
+            const w = new THREE.Mesh(wheelGeo, tireMat);
+            w.rotation.x = Math.PI / 2;
+            w.position.set(wx, 0.56, wz);
+            baitacaBus.add(w);
+            const rim = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.45, 12), rimMat);
+            rim.rotation.x = Math.PI / 2;
+            rim.position.set(wx, 0.56, wz);
+            baitacaBus.add(rim);
+        });
+
+        artistZoneGroup.add(baitacaBus);
+
+        const sharedCarChassisGeo = new THREE.BoxGeometry(4.4, 0.82, 1.92);
+        const sharedCarWheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.26, 10);
+        sharedCarWheelGeo.rotateX(Math.PI / 2);
+        const sharedCarGlassMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, metalness: 0.85 });
+        const sharedCarBodyMaterials = {};
+
+        function getCarBodyMaterial(colorHex) {
+            if (!sharedCarBodyMaterials[colorHex]) {
+                sharedCarBodyMaterials[colorHex] = new THREE.MeshStandardMaterial({
+                    color: colorHex, roughness: 0.25, metalness: 0.55
+                });
+            }
+            return sharedCarBodyMaterials[colorHex];
+        }
+
+        const sharedCabinGeos = {
+            pickup: new THREE.BoxGeometry(1.9, 0.72, 1.68),
+            suv: new THREE.BoxGeometry(2.65, 0.72, 1.68),
+            sedan: new THREE.BoxGeometry(2.25, 0.72, 1.68)
+        };
+        const sharedRoofGeos = {
+            pickup: new THREE.BoxGeometry(1.75, 0.1, 1.62),
+            suv: new THREE.BoxGeometry(2.5, 0.1, 1.62),
+            sedan: new THREE.BoxGeometry(2.1, 0.1, 1.62)
+        };
+
+        function createRealisticVehicle(colorHex, type = 'suv', castShadows = false) {
+            const car = new THREE.Group();
+            const bodyMat = getCarBodyMaterial(colorHex);
+
+            const chassis = new THREE.Mesh(sharedCarChassisGeo, bodyMat);
+            chassis.position.y = 0.68;
+            chassis.castShadow = castShadows;
+            car.add(chassis);
+
+            const cabinX = type === 'pickup' ? -0.45 : -0.15;
+            const cabin = new THREE.Mesh(sharedCabinGeos[type] || sharedCabinGeos.suv, sharedCarGlassMat);
+            cabin.position.set(cabinX, 1.38, 0);
+            car.add(cabin);
+
+            const roof = new THREE.Mesh(sharedRoofGeos[type] || sharedRoofGeos.suv, bodyMat);
+            roof.position.set(cabinX, 1.76, 0);
+            car.add(roof);
+
+            [[-1.35, 0.92], [-1.35, -0.92], [1.35, 0.92], [1.35, -0.92]].forEach(([wx, wz]) => {
+                const wheel = new THREE.Mesh(sharedCarWheelGeo, tireMat);
+                wheel.position.set(wx, 0.34, wz);
+                car.add(wheel);
+            });
+
+            return car;
+        }
+
+        [
+            { x: -44, z: -46, color: 0x0f172a, rot: 0, type: 'suv' },
+            { x: -35, z: -46, color: 0xf8fafc, rot: 0, type: 'pickup' },
+            { x: -24, z: -46, color: 0x334155, rot: 0, type: 'suv' },
+            { x: -23, z: -38, color: 0xb91c1c, rot: 0.1, type: 'pickup' }
+        ].forEach(c => {
+            const car = createRealisticVehicle(c.color, c.type, true);
+            car.position.set(c.x, 0, c.z);
+            car.rotation.y = c.rot;
+            artistZoneGroup.add(car);
+        });
+
+        registerInteractive(artistZoneGroup, 'onibus_baitaca');
+        scene.add(artistZoneGroup);
+
+        // --- 1E. COMÉRCIO ---
+        const comercioGroup = new THREE.Group();
+        const westComercioPts = [[-85.5, -36], [-78.5, -36], [-78.5, 45], [-85.5, 45]];
+        comercioGroup.add(createGroundPolygon(westComercioPts, 0xa7f3d0, 0.16, null, 0.08));
+        createGroundPolygon(westComercioPts, 0xd1fae5, 0.0, 0x4ade80, 0.13, 0.35, croquiLinesGroup);
+
+        const southComercioPts = [[-78.5, 39], [-53.5, 52], [-53.5, 62], [-78.5, 49]];
+        comercioGroup.add(createGroundPolygon(southComercioPts, 0xa7f3d0, 0.16, null, 0.08));
+        createGroundPolygon(southComercioPts, 0xd1fae5, 0.0, 0x4ade80, 0.13, 0.35, croquiLinesGroup);
+
+        const sharedTentPoleMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.75 });
+        const sharedTentRoofMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35, metalness: 0.05 });
+
+        function createPyramidTent(size = 5, legHeight = 2.6, peakHeight = 2.0, hasOrangeTrim = false) {
+            const tent = new THREE.Group();
+            const half = size / 2;
+
+            const poleGeo = new THREE.CylinderGeometry(0.08, 0.08, legHeight, 8);
+            [[-half + 0.18, -half + 0.18], [half - 0.18, -half + 0.18], [-half + 0.18, half - 0.18], [half - 0.18, half - 0.18]].forEach(([px, pz]) => {
+                const pole = new THREE.Mesh(poleGeo, sharedTentPoleMat);
+                pole.position.set(px, legHeight / 2, pz);
+                tent.add(pole);
+            });
+
+            const coneRadius = (size / Math.SQRT2) * 1.03;
+            const roof = new THREE.Mesh(new THREE.ConeGeometry(coneRadius, peakHeight, 4), sharedTentRoofMat);
+            roof.position.y = legHeight + peakHeight / 2;
+            roof.rotation.y = Math.PI / 4;
+            roof.castShadow = true;
+            roof.receiveShadow = true;
+            tent.add(roof);
+
+            const skirt = new THREE.Mesh(
+                new THREE.BoxGeometry(size, 0.36, size),
+                new THREE.MeshStandardMaterial({ color: hasOrangeTrim ? 0xea580c : 0xf1f5f9, roughness: 0.45 })
+            );
+            skirt.position.y = legHeight;
+            tent.add(skirt);
+
+            return tent;
+        }
+
+        for (let z = -32; z <= 41; z += 6.5) {
+            const t = createPyramidTent(5, 2.5, 1.85, false);
+            t.position.set(-82, 0, z);
+            t.rotation.y = Math.PI / 2;
+            comercioGroup.add(t);
+        }
+
+        const originalSouthTents = 8;
+        const remainingSouthTents = 3;
+        for (let i = 0; i < remainingSouthTents; i++) {
+            const frac = i / (originalSouthTents - 1);
+            const tx = -73 + frac * 52;
+            const tz = 46 + frac * 27;
+            const t = createPyramidTent(5, 2.5, 1.85, false);
+            t.position.set(tx, 0, tz);
+            t.rotation.y = -0.47;
+            comercioGroup.add(t);
+        }
+
+        registerInteractive(comercioGroup, 'comercio');
+        scene.add(comercioGroup);
+
+        // --- 1F. GRADIS DE ISOLAMENTO ---
+        const gradisGroup = new THREE.Group();
+        const gradilMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.75, roughness: 0.3 });
+
+        function buildGradilLine(x, zStart, zEnd) {
+            const length = Math.abs(zEnd - zStart);
+            const zCenter = (zStart + zEnd) / 2;
+
+            [0.35, 1.1, 1.95].forEach(ry => {
+                const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, length), gradilMat);
+                rail.position.set(x, ry, zCenter);
+                rail.castShadow = true;
+                gradisGroup.add(rail);
+            });
+
+            for (let z = zStart; z <= zEnd; z += 2.5) {
+                const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.1, 0.22), gradilMat);
+                post.position.set(x, 1.05, z);
+                post.castShadow = true;
+                gradisGroup.add(post);
+
+                const foot = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.1, 0.3), gradilMat);
+                foot.position.set(x, 0.05, z);
+                gradisGroup.add(foot);
+            }
+        }
+
+        buildGradilLine(-15, -57, 4);
+        buildGradilLine(-15, 18, 84);
+
+        const portalArch = new THREE.Mesh(
+            new THREE.BoxGeometry(1.2, 0.8, 14.4),
+            new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 })
+        );
+        portalArch.position.set(-15, 4.6, 11);
+        gradisGroup.add(portalArch);
+        [4.2, 17.8].forEach(pz => {
+            const pCol = new THREE.Mesh(new THREE.BoxGeometry(0.8, 4.6, 0.8), gradilMat);
+            pCol.position.set(-15, 2.3, pz);
+            pCol.castShadow = true;
+            gradisGroup.add(pCol);
+        });
+
+        registerInteractive(gradisGroup, 'gradis');
+        scene.add(gradisGroup);
+
+        // ============================================================================
+        // 6. SECTOR 2: ÁREA DO CHURRASCO E MOTORHOMES
+        // ============================================================================
+        const bbqPolyPts = [[-3, 47], [45, 64], [33, 99], [-3, 81]];
+        scene.add(createGroundPolygon(bbqPolyPts, 0x62683e, 0.9, null, 0.06));
+        croquiLinesGroup.add(createGroundPolygon(bbqPolyPts, 0xfacc15, 0.0, 0xfacc15, 0.14, 0.85));
+
+        const bbqAngle = -0.36;
+
+        // --- 2A. TENDA DO CHURRASCO ---
+        const tendaChurrascoGroup = new THREE.Group();
+        tendaChurrascoGroup.position.set(6.5, 0, 53.5);
+        tendaChurrascoGroup.rotation.y = bbqAngle;
+
+        createGroundPolygon([[-5.4, -5.4], [5.4, -5.4], [5.4, 5.4], [-5.4, 5.4]], 0xffffff, 0.35, 0xf97316, 0.15, 0.4, tendaChurrascoGroup);
+        tendaChurrascoGroup.add(createPyramidTent(10, 3.2, 3.1, true));
+
+        registerInteractive(tendaChurrascoGroup, 'tenda_churrasco');
+        scene.add(tendaChurrascoGroup);
+
+        // --- 2B. CHURRASQUEIRAS DE FOGO DE CHÃO ---
+        const fogoChaoGroup = new THREE.Group();
+        fogoChaoGroup.position.set(16.5, 0, 70.5);
+        fogoChaoGroup.rotation.y = bbqAngle;
+
+        function createFogoDeChaoRow(zOffset) {
+            const row = new THREE.Group();
+            row.position.z = zOffset;
+
+            row.add(createGroundPolygon([[-8.5, -1.7], [8.5, -1.7], [8.5, 1.7], [-8.5, 1.7]], 0x57534e, 0.95, 0x292524, 0.14, 0.3));
+
+            const brickMat = new THREE.MeshStandardMaterial({ color: 0x7c2d12, roughness: 0.9 });
+            [-1.5, 1.5].forEach(bz => {
+                const curb = new THREE.Mesh(new THREE.BoxGeometry(16.4, 0.32, 0.35), brickMat);
+                curb.position.set(0, 0.2, bz);
+                curb.castShadow = true;
+                row.add(curb);
+            });
+
+            const coalBed = new THREE.Mesh(
+                new THREE.BoxGeometry(15.4, 0.26, 1.15),
+                new THREE.MeshStandardMaterial({ color: 0x451a03, emissive: 0xea580c, emissiveIntensity: 0.95, roughness: 0.85 })
+            );
+            coalBed.position.y = 0.22;
+            row.add(coalBed);
+            emberMeshes.push(coalBed);
+
+            const flameMat = new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.85 });
+            for (let fx = -6.5; fx <= 6.5; fx += 1.3) {
+                const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.95, 6), flameMat);
+                flame.position.set(fx + (Math.random() - 0.5) * 0.3, 0.65, (Math.random() - 0.5) * 0.4);
+                flame.userData = { baseScale: 0.8 + Math.random() * 0.5, phase: Math.random() * Math.PI * 2 };
+                row.add(flame);
+                flameMeshes.push(flame);
+            }
+
+            const meatMat = new THREE.MeshStandardMaterial({ color: 0x881337, roughness: 0.55 });
+            const fatMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.45 });
+            const stakeMat = new THREE.MeshStandardMaterial({ color: 0x18181b, metalness: 0.8 });
+
+            for (let x = -6.8; x <= 6.8; x += 1.7) {
+                [-1.08, 1.08].forEach(sideZ => {
+                    const stakeGroup = new THREE.Group();
+                    stakeGroup.position.set(x, 0, sideZ);
+                    stakeGroup.rotation.x = sideZ > 0 ? -0.2 : 0.2;
+
+                    const rack = new THREE.Mesh(new THREE.BoxGeometry(0.75, 1.5, 0.08), stakeMat);
+                    rack.position.y = 0.75;
+                    stakeGroup.add(rack);
+
+                    const costela = new THREE.Mesh(new THREE.BoxGeometry(0.66, 1.08, 0.24), meatMat);
+                    costela.position.y = 0.82;
+                    costela.castShadow = true;
+                    stakeGroup.add(costela);
+
+                    const crust = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.46, 0.26), fatMat);
+                    crust.position.y = 0.96;
+                    stakeGroup.add(crust);
+
+                    row.add(stakeGroup);
+                });
+            }
+
+            return row;
+        }
+
+        fogoChaoGroup.add(createFogoDeChaoRow(-2.3));
+        fogoChaoGroup.add(createFogoDeChaoRow(2.3));
+
+        registerInteractive(fogoChaoGroup, 'fogo_chao');
+        scene.add(fogoChaoGroup);
+
+        // GPU-Instanced Rising Smoke Particles (34 particles in 1 draw call!)
+        const smokeCount = 34;
+        const smokeInstGeo = new THREE.SphereGeometry(0.85, 8, 8);
+        const smokeInstMat = new THREE.MeshLambertMaterial({ color: 0xe2e8f0, transparent: true, opacity: 0.26 });
+        const smokeInstanced = new THREE.InstancedMesh(smokeInstGeo, smokeInstMat, smokeCount);
+        const smokeData = [];
+        const smokeDummy = new THREE.Object3D();
+
+        for (let i = 0; i < smokeCount; i++) {
+            smokeData.push({
+                baseX: 9 + Math.random() * 15,
+                baseZ: 65 + Math.random() * 11,
+                y: 1 + Math.random() * 7,
+                speed: 1.7 + Math.random() * 1.4,
+                phase: Math.random() * Math.PI * 2,
+                baseScale: 0.75 + Math.random() * 0.75
+            });
+        }
+        scene.add(smokeInstanced);
+
+        // --- 2C. CHURRASQUEIRAS GIRATÓRIAS ---
+        const giratoriasGroup = new THREE.Group();
+        giratoriasGroup.position.set(30.5, 0, 75.5);
+        giratoriasGroup.rotation.y = bbqAngle;
+
+        giratoriasGroup.add(createGroundPolygon([[-2.4, -6.2], [2.4, -6.2], [2.4, 6.2], [-2.4, 6.2]], 0x5c4033, 0.95, 0x111827, 0.15, 0.3));
+
+        function createRotatingWheelGrill() {
+            const grill = new THREE.Group();
+            const inoxMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.9, roughness: 0.15 });
+            const brassBoxMat = new THREE.MeshStandardMaterial({ color: 0x78716c, metalness: 0.65, roughness: 0.35 });
+
+            const baseBox = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.68, 3.2), brassBoxMat);
+            baseBox.position.y = 0.35;
+            baseBox.castShadow = true;
+            grill.add(baseBox);
+
+            const coals = new THREE.Mesh(
+                new THREE.BoxGeometry(2.2, 0.16, 2.8),
+                new THREE.MeshStandardMaterial({ color: 0x7c2d12, emissive: 0xff4500, emissiveIntensity: 0.9 })
+            );
+            coals.position.y = 0.72;
+            grill.add(coals);
+            emberMeshes.push(coals);
+
+            [-1.35, 1.35].forEach(zSide => {
+                const post = new THREE.Mesh(new THREE.BoxGeometry(0.25, 2.45, 0.25), inoxMat);
+                post.position.set(0, 1.4, zSide);
+                grill.add(post);
+            });
+
+            const wheelAssembly = new THREE.Group();
+            wheelAssembly.position.set(0, 2.28, 0);
+
+            const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 2.9, 10), inoxMat);
+            axle.rotation.x = Math.PI / 2;
+            wheelAssembly.add(axle);
+
+            [-1.2, 1.2].forEach(wz => {
+                const rim = new THREE.Mesh(new THREE.TorusGeometry(1.35, 0.07, 10, 24), inoxMat);
+                rim.position.z = wz;
+                wheelAssembly.add(rim);
+
+                for (let s = 0; s < 3; s++) {
+                    const spoke = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.65, 6), inoxMat);
+                    spoke.position.z = wz;
+                    spoke.rotation.z = (s * Math.PI) / 3;
+                    wheelAssembly.add(spoke);
+                }
+            });
+
+            const roastMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.45 });
+            for (let b = 0; b < 6; b++) {
+                const angle = (b * Math.PI * 2) / 6;
+                const bx = Math.cos(angle) * 1.25;
+                const by = Math.sin(angle) * 1.25;
+
+                const basket = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.12, 2.3), inoxMat);
+                basket.position.set(bx, by, 0);
+                wheelAssembly.add(basket);
+
+                const meat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 1.9), roastMat);
+                meat.position.set(bx, by + 0.1, 0);
+                wheelAssembly.add(meat);
+            }
+
+            grill.add(wheelAssembly);
+            animatedWheels.push(wheelAssembly);
+            return grill;
+        }
+
+        const gir1 = createRotatingWheelGrill();
+        gir1.position.set(0, 0, -2.8);
+        giratoriasGroup.add(gir1);
+
+        const gir2 = createRotatingWheelGrill();
+        gir2.position.set(0, 0, 2.8);
+        giratoriasGroup.add(gir2);
+
+        registerInteractive(giratoriasGroup, 'giratorias');
+        scene.add(giratoriasGroup);
+
+        // --- 2D. MOTORHOMES ---
+        const motorhomeGroup = new THREE.Group();
+        motorhomeGroup.position.set(12.5, 0, 87.5);
+        motorhomeGroup.rotation.y = -0.45;
+
+        createGroundPolygon([[-10.5, -3.2], [10.5, -3.2], [10.5, 3.2], [-10.5, 3.2]], 0x86efac, 0.35, 0x4ade80, 0.15, 0.35, motorhomeGroup);
+
+        function createMotorhomeMesh() {
+            const mh = new THREE.Group();
+            const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.25 });
+            const stripeMat = new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.4 });
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.1, metalness: 0.85 });
+
+            const body = new THREE.Mesh(new THREE.BoxGeometry(8.6, 2.9, 2.55), whiteMat);
+            body.position.y = 1.8;
+            body.castShadow = true;
+            mh.add(body);
+
+            const alkoven = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.95, 2.5), whiteMat);
+            alkoven.position.set(-3.6, 2.85, 0);
+            mh.add(alkoven);
+
+            const cab = new THREE.Mesh(new THREE.BoxGeometry(1.65, 1.85, 2.4), whiteMat);
+            cab.position.set(-4.6, 1.25, 0);
+            mh.add(cab);
+
+            const mhWindshield = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.95, 2.15), glassMat);
+            mhWindshield.position.set(-5.4, 1.7, 0);
+            mh.add(mhWindshield);
+
+            const stripe = new THREE.Mesh(new THREE.BoxGeometry(8.65, 0.35, 2.58), stripeMat);
+            stripe.position.y = 1.45;
+            mh.add(stripe);
+
+            const awning = new THREE.Mesh(
+                new THREE.BoxGeometry(5.2, 0.12, 2.1),
+                new THREE.MeshStandardMaterial({ color: 0x0369a1, roughness: 0.6 })
+            );
+            awning.position.set(0.5, 2.95, -2.2);
+            awning.castShadow = true;
+            mh.add(awning);
+
+            [[-4.2, 1.22], [-4.2, -1.22], [2.4, 1.22], [2.4, -1.22]].forEach(([wx, wz]) => {
+                const w = new THREE.Mesh(sharedCarWheelGeo, tireMat);
+                w.scale.setScalar(1.3);
+                w.position.set(wx, 0.44, wz);
+                mh.add(w);
+            });
+
+            return mh;
+        }
+
+        const mh1 = createMotorhomeMesh();
+        mh1.position.set(-4.8, 0, 0);
+        motorhomeGroup.add(mh1);
+
+        const mh2 = createMotorhomeMesh();
+        mh2.position.set(5.4, 0, 0);
+        motorhomeGroup.add(mh2);
+
+        registerInteractive(motorhomeGroup, 'motorhome');
+        scene.add(motorhomeGroup);
+
+        // ============================================================================
+        // 7. SECTOR 3: ESTACIONAMENTO GERAL (INSTANCED)
+        // ============================================================================
+        const parkingPolyPts = [[4, -102], [114, -90], [115, 92], [46, 76], [48, 61], [-4, 43]];
+        croquiLinesGroup.add(createGroundPolygon(parkingPolyPts, 0x38bdf8, 0.14, 0x7e22ce, 0.12, 0.95));
+
+        const parkingGroup = new THREE.Group();
+        const parkHitPlane = new THREE.Mesh(
+            new THREE.BoxGeometry(105, 0.5, 160),
+            new THREE.MeshBasicMaterial({ visible: false })
+        );
+        parkHitPlane.position.set(55, 0.25, -10);
+        parkingGroup.add(parkHitPlane);
+        registerInteractive(parkHitPlane, 'estacionamento');
+
+        const carPalette = [
+            0xf8fafc, 0xe2e8f0, 0x94a3b8, 0x475569, 0x1e293b,
+            0xb91c1c, 0x1d4ed8, 0x0369a1, 0xb45309, 0x15803d
+        ];
+
+        const treeClusterCenters = [
+            { x: 90, z: -72, r: 16 },
+            { x: 84, z: -18, r: 18 },
+            { x: 40, z: 18, r: 14 },
+            { x: 76, z: 36, r: 12 }
+        ];
+
+        function isNearTreeCluster(x, z) {
+            return treeClusterCenters.some(tc => Math.hypot(x - tc.x, z - tc.z) < tc.r);
+        }
+
+        const parkedCarsList = [];
+        let seedCounter = 17;
+        function seededRandom() {
+            seedCounter = (seedCounter * 16807) % 2147483647;
+            return (seedCounter - 1) / 2147483646;
+        }
+
+        for (let rowZ = -78; rowZ <= 52; rowZ += 15) {
+            for (let colX = 8; colX <= 104; colX += 4.3) {
+                if (rowZ > 32 && colX < 52) continue;
+                if (Math.abs(colX - 54) < 5) continue;
+                if (isNearTreeCluster(colX, rowZ)) continue;
+
+                [-2.6, 2.6].forEach(dz => {
+                    if (seededRandom() > 0.2) {
+                        const colorHex = carPalette[Math.floor(seededRandom() * carPalette.length)];
+                        parkedCarsList.push({
+                            x: colX,
+                            z: rowZ + dz,
+                            rotY: dz > 0 ? Math.PI / 2 : -Math.PI / 2,
+                            colorHex
+                        });
+                    }
+                });
+            }
+        }
+
+        const carCount = parkedCarsList.length;
+        const instancedBodyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.28, metalness: 0.5 });
+        const instancedChassis = new THREE.InstancedMesh(sharedCarChassisGeo, instancedBodyMat, carCount);
+        const instancedCabin = new THREE.InstancedMesh(sharedCabinGeos.suv, sharedCarGlassMat, carCount);
+        const instancedWheels = new THREE.InstancedMesh(sharedCarWheelGeo, tireMat, carCount * 4);
+        instancedChassis.castShadow = true;
+        instancedChassis.receiveShadow = true;
+
+        const dummyObj = new THREE.Object3D();
+        const tempColor = new THREE.Color();
+        let wheelIdx = 0;
+
+        parkedCarsList.forEach((c, idx) => {
+            tempColor.setHex(c.colorHex);
+
+            dummyObj.position.set(c.x, 0.68, c.z);
+            dummyObj.rotation.set(0, c.rotY, 0);
+            dummyObj.scale.set(1, 1, 1);
+            dummyObj.updateMatrix();
+            instancedChassis.setMatrixAt(idx, dummyObj.matrix);
+            instancedChassis.setColorAt(idx, tempColor);
+
+            dummyObj.position.set(c.x, 1.38, c.z);
+            dummyObj.updateMatrix();
+            instancedCabin.setMatrixAt(idx, dummyObj.matrix);
+
+            const cosR = Math.cos(c.rotY);
+            const sinR = Math.sin(c.rotY);
+            [[-1.35, 0.92], [-1.35, -0.92], [1.35, 0.92], [1.35, -0.92]].forEach(([lx, lz]) => {
+                const wx = c.x + lx * cosR + lz * sinR;
+                const wz = c.z - lx * sinR + lz * cosR;
+                dummyObj.position.set(wx, 0.34, wz);
+                dummyObj.rotation.set(0, c.rotY, 0);
+                dummyObj.updateMatrix();
+                instancedWheels.setMatrixAt(wheelIdx++, dummyObj.matrix);
+            });
+        });
+
+        instancedChassis.instanceMatrix.needsUpdate = true;
+        if (instancedChassis.instanceColor) instancedChassis.instanceColor.needsUpdate = true;
+        instancedCabin.instanceMatrix.needsUpdate = true;
+        instancedWheels.instanceMatrix.needsUpdate = true;
+
+        parkingGroup.add(instancedChassis);
+        parkingGroup.add(instancedCabin);
+        parkingGroup.add(instancedWheels);
+
+        const sharedPoleGeo = new THREE.CylinderGeometry(0.12, 0.16, 9, 6);
+        const sharedLampHeadGeo = new THREE.BoxGeometry(1.2, 0.16, 0.5);
+        for (let pz = -70; pz <= 50; pz += 30) {
+            [26, 54, 86].forEach(px => {
+                if (isNearTreeCluster(px, pz)) return;
+                const lPole = new THREE.Mesh(sharedPoleGeo, poleMat);
+                lPole.position.set(px, 4.5, pz);
+                parkingGroup.add(lPole);
+
+                const lHead = new THREE.Mesh(sharedLampHeadGeo, bulbMat);
+                lHead.position.set(px, 9.0, pz);
+                parkingGroup.add(lHead);
+            });
+        }
+
+        scene.add(parkingGroup);
+
+        // ============================================================================
+        // 8. GPU-INSTANCED MULTI-CROWN TREES
+        // ============================================================================
+        const trunkGeo = new THREE.CylinderGeometry(0.32, 0.52, 2.8, 6);
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.92 });
+        const foliageGeo = new THREE.DodecahedronGeometry(2.2, 1);
+        const foliageInstMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 });
+        const foliageColors = [0x14532d, 0x166534, 0x15803d, 0x365314];
+
+        const treeTransforms = [];
+        function queueRealisticTree(x, z, scale = 1.0) {
+            treeTransforms.push({
+                x, z, scale,
+                colorHex: foliageColors[Math.floor(seededRandom() * foliageColors.length)]
+            });
+        }
+
+        for (let i = 0; i < 95; i++) {
+            const tx = -115 + seededRandom() * 94;
+            const tz = -104 + seededRandom() * 44;
+            if (tz > -56 && tx > -78) continue;
+            queueRealisticTree(tx, tz, 1.05 + seededRandom() * 0.75);
+        }
+
+        for (let i = 0; i < 95; i++) {
+            const tx = 128 + seededRandom() * 32;
+            const tz = -104 + seededRandom() * 220;
+            queueRealisticTree(tx, tz, 1.05 + seededRandom() * 0.75);
+        }
+
+        treeClusterCenters.forEach(tc => {
+            for (let j = 0; j < 10; j++) {
+                const ang = seededRandom() * Math.PI * 2;
+                const rad = seededRandom() * (tc.r * 0.65);
+                queueRealisticTree(tc.x + Math.cos(ang) * rad, tc.z + Math.sin(ang) * rad, 0.95 + seededRandom() * 0.55);
+            }
+        });
+
+        for (let i = 0; i < 38; i++) {
+            const tx = 25 + seededRandom() * 85;
+            const tz = 104 + seededRandom() * 20;
+            queueRealisticTree(tx, tz, 1.0 + seededRandom() * 0.55);
+        }
+
+        const totalTrees = treeTransforms.length;
+        const instancedTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, totalTrees);
+        const instancedCrowns = new THREE.InstancedMesh(foliageGeo, foliageInstMat, totalTrees * 3);
+        instancedCrowns.castShadow = true;
+        instancedCrowns.receiveShadow = true;
+
+        let crownIdx = 0;
+        treeTransforms.forEach((t, idx) => {
+            dummyObj.position.set(t.x, 1.4 * t.scale, t.z);
+            dummyObj.rotation.set(0, 0, 0);
+            dummyObj.scale.setScalar(t.scale);
+            dummyObj.updateMatrix();
+            instancedTrunks.setMatrixAt(idx, dummyObj.matrix);
+
+            tempColor.setHex(t.colorHex);
+            [
+                [0, 3.8, 0, 1.15],
+                [-0.9, 3.2, 0.6, 0.85],
+                [0.9, 3.3, -0.5, 0.88]
+            ].forEach(([ox, oy, oz, rScale]) => {
+                dummyObj.position.set(t.x + ox * t.scale, oy * t.scale, t.z + oz * t.scale);
+                dummyObj.scale.setScalar(t.scale * rScale);
+                dummyObj.updateMatrix();
+                instancedCrowns.setMatrixAt(crownIdx, dummyObj.matrix);
+                instancedCrowns.setColorAt(crownIdx, tempColor);
+                crownIdx++;
+            });
+        });
+
+        instancedTrunks.instanceMatrix.needsUpdate = true;
+        instancedCrowns.instanceMatrix.needsUpdate = true;
+        if (instancedCrowns.instanceColor) instancedCrowns.instanceColor.needsUpdate = true;
+        scene.add(instancedTrunks);
+        scene.add(instancedCrowns);
+
+        requestShadowMapUpdate();
+
+        // ============================================================================
+        // 9. FLOATING 3D HTML LABELS (DIRTY-CHECKED GPU COMPOSITOR TRANSFORMS)
+        // ============================================================================
+        const LABELS_CONFIG = [
+            { id: 'camarins', text: 'camarins', pos: new THREE.Vector3(-65, 5.5, -51), bg: 'bg-blue-700/90 text-white', clickable: true },
+            { id: 'palco', text: 'palco PlaneTchê (20-21 Nov)', pos: new THREE.Vector3(-65, 11.2, -42), bg: 'bg-red-600/90 text-white', clickable: true },
+            { id: 'pavilhao', text: 'pavilhão (20×50m)', pos: new THREE.Vector3(-65, 10.0, -10), bg: 'bg-yellow-400/95 text-slate-950', clickable: true },
+            { id: 'onibus_baitaca', text: 'ônibus do baitaca', pos: new THREE.Vector3(-36, 5.5, -28), bg: 'bg-amber-500/95 text-slate-950', clickable: true },
+            { id: 'onibus_baitaca', text: 'estacionamento artistas', pos: new THREE.Vector3(-28, 3.2, -45), bg: 'bg-amber-900/90 text-amber-100', clickable: true },
+            { id: 'comercio', text: 'comércio (5×5m)', pos: new THREE.Vector3(-82, 5.5, -6), bg: 'bg-emerald-600/90 text-white', clickable: true },
+            { id: 'comercio', text: 'comércio (5×5m)', pos: new THREE.Vector3(-65.5, 5.5, 50), bg: 'bg-emerald-600/90 text-white', clickable: true },
+            { id: 'gradis', text: 'Gradis', pos: new THREE.Vector3(-15, 4.5, -18), bg: 'bg-neutral-900/90 text-white', clickable: true },
+            { id: 'gradis', text: 'Gradis', pos: new THREE.Vector3(-15, 4.5, 48), bg: 'bg-neutral-900/90 text-white', clickable: true },
+            { id: 'tenda_churrasco', text: 'Tenda do churrasco (10×10m)', pos: new THREE.Vector3(6.5, 7.5, 53.5), bg: 'bg-orange-500/90 text-white', clickable: true },
+            { id: 'fogo_chao', text: 'Churrasqueiras de fogo de chão', pos: new THREE.Vector3(16.5, 4.2, 70.5), bg: 'bg-lime-800/90 text-white', clickable: true },
+            { id: 'giratorias', text: 'churrasqueiras giratórias (2×)', pos: new THREE.Vector3(31.5, 5.2, 75.5), bg: 'bg-amber-800/90 text-white', clickable: true },
+            { id: 'motorhome', text: 'motorhome', pos: new THREE.Vector3(12.5, 4.8, 88.5), bg: 'bg-green-600/90 text-white', clickable: true },
+            { id: 'estacionamento', text: 'Estacionamento Geral', pos: new THREE.Vector3(55, 4.5, -10), bg: 'bg-purple-700/90 text-white', clickable: true },
+            { id: 'lagoa', text: '⛵ Lagoa dos Quadros & Trapiche', pos: new THREE.Vector3(-42, 6.8, -162), bg: 'bg-sky-700/90 text-white', clickable: true },
+            { id: 'lagoa', text: '🦆 Patonáutico & Prainha', pos: new THREE.Vector3(-26, 3.8, -109), bg: 'bg-amber-400/95 text-slate-950', clickable: true },
+            { id: null, text: '🛣️ RS-389', pos: new THREE.Vector3(-76, 2.0, 88), bg: 'bg-white/95 text-slate-900', clickable: false },
+            { id: null, text: '🍴 Ohana krep\'s', pos: new THREE.Vector3(126, 3.5, 12), bg: 'bg-orange-600/90 text-white', clickable: false }
+        ];
+
+        const labelDOMElements = [];
+        LABELS_CONFIG.forEach(cfg => {
+            const el = document.createElement('div');
+            el.className = 'poi-label';
+            el.innerHTML = `
+                <div class="poi-pin ${cfg.bg}">${cfg.text}</div>
+                <div class="poi-stem"></div>
+                <div class="poi-dot"></div>
+            `;
+            if (cfg.clickable && cfg.id) {
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (tourState.active) {
+                        tourState.paused = true;
+                        updateTourPlayButton();
+                    }
+                    focusElement(cfg.id);
+                });
+            }
+            labelsContainer.appendChild(el);
+            labelDOMElements.push({ el, pos: cfg.pos, visible: true });
+        });
+
+        let cachedViewportW = window.innerWidth;
+        let cachedViewportH = window.innerHeight;
+        const projTempV = new THREE.Vector3();
+        const lastCamPos = new THREE.Vector3(999, 999, 999);
+        const lastCamQuat = new THREE.Quaternion();
+        let forceLabelUpdate = true;
+
+        function updateLabelsProjection() {
+            const toggleEl = document.getElementById('toggle-labels');
+            if (toggleEl && !toggleEl.checked) {
+                if (labelsContainer.style.display !== 'none') {
+                    labelsContainer.style.display = 'none';
+                }
+                return;
+            }
+            if (labelsContainer.style.display === 'none') {
+                labelsContainer.style.display = 'block';
+                forceLabelUpdate = true;
+            }
+
+            if (!forceLabelUpdate &&
+                lastCamPos.distanceToSquared(camera.position) < 0.0001 &&
+                Math.abs(lastCamQuat.dot(camera.quaternion)) > 0.999999) {
+                return;
+            }
+            lastCamPos.copy(camera.position);
+            lastCamQuat.copy(camera.quaternion);
+            forceLabelUpdate = false;
+
+            const halfW = cachedViewportW * 0.5;
+            const halfH = cachedViewportH * 0.5;
+
+            for (let i = 0; i < labelDOMElements.length; i++) {
+                const item = labelDOMElements[i];
+                projTempV.copy(item.pos).project(camera);
+
+                if (projTempV.z > 1 || projTempV.x < -1.15 || projTempV.x > 1.15 || projTempV.y < -1.15 || projTempV.y > 1.15) {
+                    if (item.visible) {
+                        item.el.style.display = 'none';
+                        item.visible = false;
+                    }
+                } else {
+                    if (!item.visible) {
+                        item.el.style.display = 'block';
+                        item.visible = true;
+                    }
+                    const x = (projTempV.x * halfW) + halfW;
+                    const y = -(projTempV.y * halfH) + halfH;
+                    item.el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+                }
+            }
+        }
+
+        // ============================================================================
+        // 10. ATMOSPHERIC TIME OF DAY ENGINE
+        // ============================================================================
+        const TIME_MODES = ['day', 'sunset', 'night'];
+        let currentTimeModeIndex = 0;
+
+        window.setAtmosphereMode = function(mode) {
+            currentTimeModeIndex = TIME_MODES.indexOf(mode);
+            if (currentTimeModeIndex === -1) currentTimeModeIndex = 0;
+
+            const iconEl = document.getElementById('time-icon');
+            const labelEl = document.getElementById('time-label');
+
+            if (mode === 'day') {
+                skyDomeMat.map = skyTextures.day;
+                scene.fog.color.setHex(0xbae6fd);
+                ambientLight.intensity = 0.58;
+                hemiLight.intensity = 0.45;
+                sunLight.color.setHex(0xfffbeb);
+                sunLight.intensity = 1.25;
+                sunLight.position.set(-95, 145, 85);
+                stageSpot1.intensity = 0;
+                stageSpot2.intensity = 0;
+                volumetricBeamsGroup.visible = false;
+                bbqFireLight.intensity = 1.5;
+                pavilionWarmLight.intensity = 0.6;
+                if (iconEl) iconEl.textContent = '☀️';
+                if (labelEl) labelEl.textContent = 'Dia Ensolarado';
+            } else if (mode === 'sunset') {
+                skyDomeMat.map = skyTextures.sunset;
+                scene.fog.color.setHex(0xfdba74);
+                ambientLight.intensity = 0.44;
+                hemiLight.intensity = 0.35;
+                sunLight.color.setHex(0xfb923c);
+                sunLight.intensity = 1.1;
+                sunLight.position.set(-145, 48, -60);
+                stageSpot1.intensity = 1.6;
+                stageSpot2.intensity = 1.6;
+                volumetricBeamsGroup.visible = true;
+                bbqFireLight.intensity = 2.4;
+                pavilionWarmLight.intensity = 1.3;
+                if (iconEl) iconEl.textContent = '🌅';
+                if (labelEl) labelEl.textContent = 'Pôr do Sol na Lagoa';
+            } else if (mode === 'night') {
+                skyDomeMat.map = skyTextures.night;
+                scene.fog.color.setHex(0x090d16);
+                ambientLight.intensity = 0.26;
+                hemiLight.intensity = 0.22;
+                sunLight.color.setHex(0x93c5fd);
+                sunLight.intensity = 0.22;
+                sunLight.position.set(-80, 120, 60);
+                stageSpot1.intensity = 3.2;
+                stageSpot2.intensity = 3.2;
+                volumetricBeamsGroup.visible = true;
+                bbqFireLight.intensity = 3.2;
+                pavilionWarmLight.intensity = 1.8;
+                if (iconEl) iconEl.textContent = '🌙';
+                if (labelEl) labelEl.textContent = 'Show Noturno';
+            }
+            skyDomeMat.needsUpdate = true;
+            requestShadowMapUpdate();
+        };
+
+        window.cycleTimeOfDay = function() {
+            const nextIdx = (currentTimeModeIndex + 1) % TIME_MODES.length;
+            setAtmosphereMode(TIME_MODES[nextIdx]);
+        };
+
+        volumetricBeamsGroup.visible = false;
+
+        // ============================================================================
+        // 11. CINEMATIC DRONE TOUR ENGINE
+        // ============================================================================
+        const TOUR_WAYPOINTS = [
+            {
+                step: '01 / 10',
+                title: 'Vista Panorâmica & Rodovia RS-389',
+                dim: 'Escala 1:1 • Capão da Canoa',
+                desc: 'Aproximação aérea sobre a rodovia RS-389 revelando toda a implantação operacional do Parque Náutico Lagoa dos Quadros.',
+                cam: new THREE.Vector3(-125, 68, 138),
+                look: new THREE.Vector3(-35, 4, 15),
+                atmo: 'day'
+            },
+            {
+                step: '02 / 10',
+                title: 'Corredores do Comércio (Tendas 5m × 5m)',
+                dim: '15 Tendas Piramidais (Vão Livre)',
+                desc: 'Sobrevoo pelos corredores comerciais com tendas de vão livre: 3 tendas à esquerda na borda sul e 12 tendas alinhadas a oeste do pavilhão.',
+                cam: new THREE.Vector3(-108, 22, 58),
+                look: new THREE.Vector3(-76, 3, 12),
+                atmo: 'day'
+            },
+            {
+                step: '03 / 10',
+                title: 'Pavilhão Principal (20m × 50m)',
+                dim: '1.000 m² de Vão Livre Coberto',
+                desc: 'Travessia pelo grande pavilhão central em duas águas (20×50m) com piso limpo em vão livre em frente ao palco.',
+                cam: new THREE.Vector3(-96, 18, -5),
+                look: new THREE.Vector3(-65, 4, -15),
+                atmo: 'day'
+            },
+            {
+                step: '04 / 10',
+                title: 'Palco Principal — PlaneTchê (20 e 21 Nov 2026)',
+                dim: 'Telão LED HD • 20m × 10m',
+                desc: 'Inspeção frontal do Palco Principal com o Telão de LED oficial do PlaneTchê (20 e 21 de Novembro de 2026) e Line Arrays.',
+                cam: new THREE.Vector3(-65, 10, -16),
+                look: new THREE.Vector3(-65, 5.2, -42),
+                atmo: 'day'
+            },
+            {
+                step: '05 / 10',
+                title: 'Camarim Único (Backstage Norte)',
+                dim: '18m × 4m (Módulo Único)',
+                desc: 'Contorno aéreo pelo norte do palco destacando a estrutura única de camarim climatizado e a orla da Lagoa dos Quadros ao fundo.',
+                cam: new THREE.Vector3(-66, 18, -82),
+                look: new THREE.Vector3(-65, 2.5, -49),
+                atmo: 'day'
+            },
+            {
+                step: '06 / 10',
+                title: 'Ônibus do Baitaca & Estac. Artistas',
+                dim: 'Plotagem "Do Fundo da Grota" + Frota VIP',
+                desc: 'Voo rasante pelo setor marrom à direita do palco, onde o Ônibus do Baitaca permanece estacionado junto à frota exclusiva dos artistas.',
+                cam: new THREE.Vector3(-18, 12, -12),
+                look: new THREE.Vector3(-36, 2.5, -34),
+                atmo: 'sunset'
+            },
+            {
+                step: '07 / 10',
+                title: 'Gradis de Isolamento & Pórtico Central',
+                dim: '2 Trechos Contínuos (Altura 2,0m)',
+                desc: 'Alinhamento sobre os dois trechos de gradis metálicos que isolam a área principal e o backstage da via interna de circulação.',
+                cam: new THREE.Vector3(10, 22, 16),
+                look: new THREE.Vector3(-15, 2, 12),
+                atmo: 'sunset'
+            },
+            {
+                step: '08 / 10',
+                title: 'Tenda do Churrasco (10m × 10m)',
+                dim: '100 m² • Setor Amarelo',
+                desc: 'Chegada ao setor gastronômico pela Tenda do Churrasco 10×10m dedicada ao corte, preparo e atendimento.',
+                cam: new THREE.Vector3(-16, 15, 62),
+                look: new THREE.Vector3(7, 3, 54),
+                atmo: 'sunset'
+            },
+            {
+                step: '09 / 10',
+                title: 'Fogo de Chão & 2 Churrasqueiras Giratórias',
+                dim: '2 Valas Paralelas + 2 Rodas Inox',
+                desc: 'Passagem pelas 2 linhas inclinadas de costelão fogo de chão com chamas vivas e pelas 2 churrasqueiras giratórias em aço inox.',
+                cam: new THREE.Vector3(46, 11, 92),
+                look: new THREE.Vector3(21, 2.2, 72),
+                atmo: 'sunset'
+            },
+            {
+                step: '10 / 10',
+                title: 'Motorhomes, Estacionamento & Show Noturno',
+                dim: '+450 Vagas • Grand Finale Iluminado',
+                desc: 'Sobrevoo pelos Motorhomes na borda sul e subida panorâmica pelo Estacionamento Geral com iluminação noturna de show!',
+                cam: new THREE.Vector3(45, 78, 115),
+                look: new THREE.Vector3(-15, 3, 5),
+                atmo: 'night'
+            }
+        ];
+
+        const camCurvePoints = TOUR_WAYPOINTS.map(wp => wp.cam);
+        const lookCurvePoints = TOUR_WAYPOINTS.map(wp => wp.look);
+        camCurvePoints.push(new THREE.Vector3(-5, 95, 145));
+        lookCurvePoints.push(new THREE.Vector3(-10, 0, 10));
+
+        const tourCamCurve = new THREE.CatmullRomCurve3(camCurvePoints, false, 'catmullrom', 0.35);
+        const tourLookCurve = new THREE.CatmullRomCurve3(lookCurvePoints, false, 'catmullrom', 0.35);
+
+        const tourState = {
+            active: false,
+            menuFreeMode: false,
+            paused: false,
+            progress: 0,
+            durationSeconds: 78,
+            speedMultiplier: 1.0,
+            cleanGraphics: false,
+            zeroHud: false,
+            currentStepIndex: -1
+        };
+
+        function syncHUDLayout() {
+            const normalHeader = document.getElementById('normal-header');
+            const normalMiddle = document.getElementById('normal-middle');
+            const normalFooter = document.getElementById('normal-footer');
+            const tourFooter = document.getElementById('tour-footer');
+            const cleanPill = document.getElementById('clean-mode-pill');
+
+            if (!tourState.menuFreeMode) {
+                normalHeader.classList.remove('hidden');
+                normalMiddle.classList.remove('hidden');
+                normalFooter.classList.remove('hidden');
+                tourFooter.classList.add('hidden');
+                cleanPill.classList.add('hidden');
+            } else {
+                normalHeader.classList.add('hidden');
+                normalMiddle.classList.add('hidden');
+                normalFooter.classList.add('hidden');
+
+                if (tourState.zeroHud) {
+                    tourFooter.classList.add('hidden');
+                    cleanPill.classList.remove('hidden');
+                } else {
+                    tourFooter.classList.remove('hidden');
+                    cleanPill.classList.add('hidden');
+                }
+            }
+        }
+
+        window.startImmersiveTour = function(restart = true) {
+            tourState.active = true;
+            tourState.menuFreeMode = true;
+            tourState.paused = false;
+            tourState.zeroHud = false;
+
+            if (restart) {
+                tourState.progress = 0;
+                tourState.currentStepIndex = -1;
+                setAtmosphereMode('day');
+            }
+
+            highlightRing.visible = false;
+            updateTourPlayButton();
+            updateTourStepCard(0);
+            syncHUDLayout();
+        };
+
+        window.enterFreeMenuLessMode = function() {
+            tourState.active = false;
+            tourState.menuFreeMode = true;
+            tourState.paused = true;
+            tourState.zeroHud = false;
+
+            document.getElementById('tour-step-badge').textContent = 'VOO LIVRE';
+            document.getElementById('tour-step-title').textContent = 'Navegação Livre Sem Menus';
+            document.getElementById('tour-step-dim').textContent = '• Mouse + WASD / Setas';
+            document.getElementById('tour-step-desc').textContent = 'Arraste o mouse para girar, use o scroll para zoom ou as teclas WASD/Setas para sobrevoar livremente.';
+
+            updateTourPlayButton();
+            syncHUDLayout();
+        };
+
+        window.exitImmersiveMode = function() {
+            tourState.active = false;
+            tourState.menuFreeMode = false;
+            tourState.zeroHud = false;
+            syncHUDLayout();
+
+            const offset = new THREE.Vector3().subVectors(camera.position, camState.target);
+            camState.desiredTarget.copy(camState.target);
+            camState.desiredSpherical.setFromVector3(offset);
+            camState.spherical.copy(camState.desiredSpherical);
+        };
+
+        function updateTourStepCard(idx) {
+            const clampedIdx = Math.max(0, Math.min(TOUR_WAYPOINTS.length - 1, idx));
+            if (clampedIdx === tourState.currentStepIndex) return;
+            tourState.currentStepIndex = clampedIdx;
+
+            const wp = TOUR_WAYPOINTS[clampedIdx];
+            document.getElementById('tour-step-badge').textContent = wp.step;
+            document.getElementById('tour-step-title').textContent = wp.title;
+            document.getElementById('tour-step-dim').textContent = `• ${wp.dim}`;
+            document.getElementById('tour-step-desc').textContent = wp.desc;
+            document.getElementById('tour-chapter-select').value = String(clampedIdx);
+
+            if (wp.atmo) {
+                setAtmosphereMode(wp.atmo);
+            }
+        }
+
+        window.jumpToTourStep = function(val) {
+            const idx = parseInt(val, 10);
+            if (isNaN(idx)) return;
+            tourState.active = true;
+            tourState.progress = idx / TOUR_WAYPOINTS.length;
+            updateTourStepCard(idx);
+            applyTourSplineCamera(tourState.progress);
+        };
+
+        function updateTourPlayButton() {
+            const icon = document.getElementById('tour-play-icon');
+            const label = document.getElementById('tour-play-label');
+            if (!tourState.active || tourState.paused) {
+                icon.textContent = '▶';
+                label.textContent = 'Continuar';
+            } else {
+                icon.textContent = '⏸';
+                label.textContent = 'Pausar';
+            }
+        }
+
+        window.toggleTourPause = function() {
+            if (!tourState.active) {
+                tourState.active = true;
+                tourState.paused = false;
+                updateTourStepCard(Math.floor(tourState.progress * TOUR_WAYPOINTS.length));
+            } else {
+                tourState.paused = !tourState.paused;
+            }
+            updateTourPlayButton();
+        };
+
+        window.prevTourStep = function() {
+            tourState.active = true;
+            const targetIdx = Math.max(0, tourState.currentStepIndex - 1);
+            tourState.progress = targetIdx / TOUR_WAYPOINTS.length;
+            updateTourStepCard(targetIdx);
+        };
+
+        window.nextTourStep = function() {
+            tourState.active = true;
+            const targetIdx = (tourState.currentStepIndex + 1) % TOUR_WAYPOINTS.length;
+            tourState.progress = targetIdx / TOUR_WAYPOINTS.length;
+            updateTourStepCard(targetIdx);
+        };
+
+        const SPEED_OPTIONS = [0.5, 1.0, 1.5, 2.0];
+        window.cycleTourSpeed = function() {
+            const idx = SPEED_OPTIONS.indexOf(tourState.speedMultiplier);
+            tourState.speedMultiplier = SPEED_OPTIONS[(idx + 1) % SPEED_OPTIONS.length];
+            document.getElementById('tour-speed-btn').textContent = `${tourState.speedMultiplier.toFixed(1)}x`;
+        };
+
+        window.toggleCleanGraphicsInTour = function() {
+            tourState.cleanGraphics = !tourState.cleanGraphics;
+            const show = !tourState.cleanGraphics;
+            document.getElementById('toggle-labels').checked = show;
+            document.getElementById('toggle-croqui-lines').checked = show;
+            croquiLinesGroup.visible = show;
+            forceLabelUpdate = true;
+
+            const btn = document.getElementById('tour-clean-graphics-btn');
+            btn.innerHTML = show ? '🏷️ <span class="hidden md:inline">Etiquetas: </span>ON' : '🏷️ <span class="hidden md:inline">Etiquetas: </span>OFF';
+        };
+
+        window.toggleZeroHudMode = function(forceState) {
+            tourState.zeroHud = typeof forceState === 'boolean' ? forceState : !tourState.zeroHud;
+            syncHUDLayout();
+        };
+
+        const tourSlider = document.getElementById('tour-progress-slider');
+        tourSlider.addEventListener('input', (e) => {
+            tourState.active = true;
+            tourState.progress = parseFloat(e.target.value) / 1000;
+            const stepIdx = Math.min(
+                TOUR_WAYPOINTS.length - 1,
+                Math.floor(tourState.progress * TOUR_WAYPOINTS.length)
+            );
+            updateTourStepCard(stepIdx);
+            applyTourSplineCamera(tourState.progress);
+        });
+
+        function applyTourSplineCamera(t) {
+            const clampedT = Math.max(0, Math.min(1, t));
+            const pos = tourCamCurve.getPointAt(clampedT);
+            const look = tourLookCurve.getPointAt(clampedT);
+
+            camera.position.lerp(pos, 0.18);
+            camState.target.lerp(look, 0.18);
+            camera.lookAt(camState.target);
+
+            camState.desiredTarget.copy(camState.target);
+            const offset = new THREE.Vector3().subVectors(camera.position, camState.target);
+            camState.desiredSpherical.setFromVector3(offset);
+            camState.spherical.copy(camState.desiredSpherical);
+        }
+
+        // ============================================================================
+        // 12. NATIVE WEBGL 60 FPS VIDEO RECORDER (.WEBM)
+        // ============================================================================
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isRecordingVideo = false;
+
+        function updateRecordingButtonsUI() {
+            const headerLbl = document.getElementById('header-rec-label');
+            const tourLbl = document.getElementById('tour-rec-label');
+            const headerDot = document.getElementById('header-rec-dot');
+            const tourDot = document.getElementById('tour-rec-dot');
+
+            if (isRecordingVideo) {
+                if (headerLbl) headerLbl.textContent = 'Parar';
+                if (tourLbl) tourLbl.textContent = 'Parar';
+                if (headerDot) headerDot.classList.add('rec-dot');
+                if (tourDot) tourDot.classList.add('rec-dot');
+            } else {
+                if (headerLbl) headerLbl.textContent = 'Gravar';
+                if (tourLbl) tourLbl.textContent = 'Gravar';
+                if (headerDot) headerDot.classList.remove('rec-dot');
+                if (tourDot) tourDot.classList.remove('rec-dot');
+            }
+        }
+
+        window.toggleVideoRecording = function() {
+            if (isRecordingVideo) {
+                stopVideoRecording();
+            } else {
+                startVideoRecording();
+            }
+        };
+
+        function startVideoRecording() {
+            try {
+                const stream = renderer.domElement.captureStream(60);
+                let options = { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 12000000 };
+                if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                    options = { mimeType: 'video/webm' };
+                }
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (e) => {
+                    if (e.data && e.data.size > 0) {
+                        recordedChunks.push(e.data);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Tour-Parque-Nautico-Planetche-3D.webm`;
+                    document.body.appendChild(a);
+                    a.click();
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 200);
+                };
+
+                mediaRecorder.start();
+                isRecordingVideo = true;
+                updateRecordingButtonsUI();
+            } catch (err) {
+                console.error('Erro ao iniciar gravação de vídeo:', err);
+            }
+        }
+
+        function stopVideoRecording() {
+            if (mediaRecorder && isRecordingVideo) {
+                mediaRecorder.stop();
+                isRecordingVideo = false;
+                updateRecordingButtonsUI();
+            }
+        }
+
+        // ============================================================================
+        // 13. FLUID 60 FPS CAMERA CONTROLS (SHORTEST-ANGLE ORBIT + MULTI-TOUCH + WASD)
+        // ============================================================================
+        const camState = {
+            target: new THREE.Vector3(2, 0, 12),
+            spherical: new THREE.Spherical(215, 0.72, -0.05),
+            desiredTarget: new THREE.Vector3(2, 0, 12),
+            desiredSpherical: new THREE.Spherical(215, 0.72, -0.05),
+            isDragging: false,
+            isPanning: false,
+            prevMouse: { x: 0, y: 0 }
+        };
+
+        function clampDesiredTarget() {
+            camState.desiredTarget.x = Math.max(-220, Math.min(220, camState.desiredTarget.x));
+            camState.desiredTarget.z = Math.max(-250, Math.min(180, camState.desiredTarget.z));
+            camState.desiredTarget.y = Math.max(0, Math.min(40, camState.desiredTarget.y));
+        }
+
+        const keysPressed = {};
+        const PRESET_SHORTCUTS = ['overview', 'topdown', 'stage', 'pavilhao', 'bbq', 'parking', 'lagoon'];
+
+        window.addEventListener('keydown', (e) => {
+            if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT')) {
+                if (e.code === 'Escape') document.activeElement.blur();
+                return;
+            }
+            keysPressed[e.code] = true;
+
+            if (e.code === 'Escape') {
+                const helpModal = document.getElementById('help-modal');
+                if (!helpModal.classList.contains('hidden')) {
+                    toggleHelpModal();
+                } else if (tourState.menuFreeMode) {
+                    exitImmersiveMode();
+                }
+            } else if (e.code === 'KeyH' && tourState.menuFreeMode) {
+                toggleZeroHudMode();
+            } else if (e.code === 'Space' && tourState.menuFreeMode) {
+                e.preventDefault();
+                toggleTourPause();
+            } else if (e.code === 'ArrowRight' && tourState.active) {
+                nextTourStep();
+            } else if (e.code === 'ArrowLeft' && tourState.active) {
+                prevTourStep();
+            } else if (e.key >= '1' && e.key <= '7' && !tourState.active) {
+                setCameraPreset(PRESET_SHORTCUTS[parseInt(e.key, 10) - 1]);
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            keysPressed[e.code] = false;
+        });
+
+        function handleKeyboardFreeNavigation(delta) {
+            if (tourState.active && !tourState.paused) return;
+
+            const moveSpeed = 62 * delta;
+            const forward = new THREE.Vector3();
+            camera.getWorldDirection(forward);
+            forward.y = 0;
+            forward.normalize();
+            const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+            if (keysPressed['KeyW'] || keysPressed['ArrowUp']) {
+                camState.desiredTarget.addScaledVector(forward, moveSpeed);
+            }
+            if (keysPressed['KeyS'] || keysPressed['ArrowDown']) {
+                camState.desiredTarget.addScaledVector(forward, -moveSpeed);
+            }
+            if (keysPressed['KeyA'] || keysPressed['ArrowLeft']) {
+                camState.desiredTarget.addScaledVector(right, -moveSpeed);
+            }
+            if (keysPressed['KeyD'] || keysPressed['ArrowRight']) {
+                camState.desiredTarget.addScaledVector(right, moveSpeed);
+            }
+            if (keysPressed['KeyQ']) {
+                camState.desiredSpherical.theta += 1.6 * delta;
+            }
+            if (keysPressed['KeyE']) {
+                camState.desiredSpherical.theta -= 1.6 * delta;
+            }
+            if (keysPressed['Equal'] || keysPressed['NumpadAdd']) {
+                camState.desiredSpherical.radius = Math.max(14, camState.desiredSpherical.radius - 70 * delta);
+            }
+            if (keysPressed['Minus'] || keysPressed['NumpadSubtract']) {
+                camState.desiredSpherical.radius = Math.min(440, camState.desiredSpherical.radius + 70 * delta);
+            }
+            clampDesiredTarget();
+        }
+
+        const camOffsetTemp = new THREE.Vector3();
+        const compassNeedleEl = document.getElementById('compass-needle');
+
+        function applyCameraTransform(delta = 0.016) {
+            const smoothFactor = 1.0 - Math.exp(-15.0 * delta);
+
+            camState.target.lerp(camState.desiredTarget, smoothFactor);
+            camState.spherical.radius += (camState.desiredSpherical.radius - camState.spherical.radius) * smoothFactor;
+            camState.spherical.phi += (camState.desiredSpherical.phi - camState.spherical.phi) * smoothFactor;
+
+            // Shortest-path angular interpolation prevents 360-degree camera spin
+            const dTheta = Math.atan2(
+                Math.sin(camState.desiredSpherical.theta - camState.spherical.theta),
+                Math.cos(camState.desiredSpherical.theta - camState.spherical.theta)
+            );
+            camState.spherical.theta += dTheta * smoothFactor;
+
+            camState.spherical.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.04, camState.spherical.phi));
+            camState.spherical.radius = Math.max(14, Math.min(440, camState.spherical.radius));
+
+            camOffsetTemp.setFromSpherical(camState.spherical);
+            camera.position.copy(camState.target).add(camOffsetTemp);
+            camera.lookAt(camState.target);
+
+            if (compassNeedleEl) {
+                const deg = (-camState.spherical.theta * 180) / Math.PI;
+                compassNeedleEl.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+            }
+        }
+
+        const activePointers = new Map();
+        let prevPinchDist = 0;
+        let pointerDownPos = { x: 0, y: 0 };
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+
+            if (tourState.active && !tourState.paused) {
+                tourState.paused = true;
+                updateTourPlayButton();
+            }
+
+            if (activePointers.size === 2) {
+                const pts = Array.from(activePointers.values());
+                prevPinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                camState.prevMouse = { x: (pts[0].x + pts[1].x) * 0.5, y: (pts[0].y + pts[1].y) * 0.5 };
+                camState.isDragging = false;
+                camState.isPanning = true;
+            } else {
+                camState.prevMouse = { x: e.clientX, y: e.clientY };
+                if (e.button === 2 || e.shiftKey) {
+                    camState.isPanning = true;
+                    camState.isDragging = false;
+                } else {
+                    camState.isDragging = true;
+                    camState.isPanning = false;
+                }
+            }
+        });
+
+        window.addEventListener('pointermove', (e) => {
+            if (!activePointers.has(e.pointerId)) return;
+            activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+            if (activePointers.size === 2) {
+                const pts = Array.from(activePointers.values());
+                const curDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+                if (prevPinchDist > 0) {
+                    const deltaDist = prevPinchDist - curDist;
+                    camState.desiredSpherical.radius += deltaDist * 0.45;
+                    camState.desiredSpherical.radius = Math.max(14, Math.min(440, camState.desiredSpherical.radius));
+                }
+                prevPinchDist = curDist;
+
+                const midX = (pts[0].x + pts[1].x) * 0.5;
+                const midY = (pts[0].y + pts[1].y) * 0.5;
+                const dx = midX - camState.prevMouse.x;
+                const dy = midY - camState.prevMouse.y;
+                camState.prevMouse = { x: midX, y: midY };
+
+                const panSpeed = camState.spherical.radius * 0.0015;
+                const forward = new THREE.Vector3();
+                camera.getWorldDirection(forward);
+                forward.y = 0;
+                forward.normalize();
+                const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+                camState.desiredTarget.addScaledVector(right, -dx * panSpeed);
+                camState.desiredTarget.addScaledVector(forward, dy * panSpeed);
+                clampDesiredTarget();
+                return;
+            }
+
+            if (!camState.isDragging && !camState.isPanning) return;
+            const dx = e.clientX - camState.prevMouse.x;
+            const dy = e.clientY - camState.prevMouse.y;
+            camState.prevMouse = { x: e.clientX, y: e.clientY };
+
+            if (camState.isDragging) {
+                camState.desiredSpherical.theta -= dx * 0.0068;
+                camState.desiredSpherical.phi -= dy * 0.0068;
+                camState.desiredSpherical.phi = Math.max(0.05, Math.min(Math.PI / 2 - 0.04, camState.desiredSpherical.phi));
+            } else if (camState.isPanning) {
+                const panSpeed = camState.spherical.radius * 0.0015;
+                const forward = new THREE.Vector3();
+                camera.getWorldDirection(forward);
+                forward.y = 0;
+                forward.normalize();
+                const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+
+                camState.desiredTarget.addScaledVector(right, -dx * panSpeed);
+                camState.desiredTarget.addScaledVector(forward, dy * panSpeed);
+                clampDesiredTarget();
+            }
+        });
+
+        function handlePointerEnd(e) {
+            activePointers.delete(e.pointerId);
+            if (activePointers.size < 2) {
+                prevPinchDist = 0;
+            }
+            if (activePointers.size === 0) {
+                const moveDist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+                camState.isDragging = false;
+                camState.isPanning = false;
+
+                if (moveDist < 6 && e.target === renderer.domElement) {
+                    handleCanvasClick(e);
+                }
+            }
+        }
+
+        window.addEventListener('pointerup', handlePointerEnd);
+        window.addEventListener('pointercancel', handlePointerEnd);
+
+        renderer.domElement.addEventListener('contextmenu', e => e.preventDefault());
+
+        renderer.domElement.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (tourState.active && !tourState.paused) {
+                tourState.paused = true;
+                updateTourPlayButton();
+            }
+            camState.desiredSpherical.radius += e.deltaY * 0.14;
+            camState.desiredSpherical.radius = Math.max(14, Math.min(440, camState.desiredSpherical.radius));
+        }, { passive: false });
+
+        // ============================================================================
+        // 14. RAYCASTING, CAMERA PRESETS & RESPONSIVE UI CONTROLS
+        // ============================================================================
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        const highlightRing = new THREE.Mesh(
+            new THREE.RingGeometry(6, 7.2, 32),
+            new THREE.MeshBasicMaterial({ color: 0x38bdf8, side: THREE.DoubleSide })
+        );
+        highlightRing.rotation.x = -Math.PI / 2;
+        highlightRing.position.y = 0.35;
+        highlightRing.visible = false;
+        scene.add(highlightRing);
+
+        function handleCanvasClick(e) {
+            mouse.x = (e.clientX / cachedViewportW) * 2 - 1;
+            mouse.y = -(e.clientY / cachedViewportH) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const hits = raycaster.intersectObjects(interactiveMeshes, false);
+
+            if (hits.length > 0) {
+                const key = hits[0].object.userData.elementKey;
+                if (key && ELEMENT_DATA[key]) {
+                    focusElement(key);
+                }
+            }
+        }
+
+        function updateInspectorUI(data) {
+            const inspPanel = document.getElementById('inspector-panel');
+            inspPanel.classList.remove('hidden');
+
+            document.getElementById('insp-badge').textContent = data.badge;
+            document.getElementById('insp-title').textContent = data.title;
+            document.getElementById('insp-desc').textContent = data.desc;
+            document.getElementById('insp-dim').textContent = data.dim;
+            document.getElementById('insp-pos').textContent = data.pos;
+
+            const specsEl = document.getElementById('insp-specs');
+            specsEl.innerHTML = data.specs.map(([k, v]) => `
+                <div class="flex justify-between gap-2">
+                    <span class="text-slate-400">• ${k}:</span>
+                    <strong class="text-white text-right">${v}</strong>
+                </div>
+            `).join('');
+        }
+
+        window.toggleMobileSectorsDrawer = function() {
+            const leftPanel = document.getElementById('left-panel');
+            leftPanel.classList.toggle('hidden');
+            leftPanel.classList.toggle('flex');
+        };
+
+        window.toggleHelpModal = function() {
+            document.getElementById('help-modal').classList.toggle('hidden');
+        };
+
+        window.filterSectors = function(query) {
+            const q = query.trim().toLowerCase();
+            document.querySelectorAll('.sector-btn').forEach(btn => {
+                const match = btn.textContent.toLowerCase().includes(q);
+                btn.style.display = match ? 'flex' : 'none';
+            });
+            document.querySelectorAll('.sector-group-title').forEach(title => {
+                title.style.display = q ? 'none' : 'block';
+            });
+        };
+
+        window.focusElement = function(key) {
+            const data = ELEMENT_DATA[key];
+            if (!data) return;
+
+            document.querySelectorAll('.sector-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.sector === key);
+            });
+
+            updateInspectorUI(data);
+
+            if (window.innerWidth < 768) {
+                const leftPanel = document.getElementById('left-panel');
+                leftPanel.classList.add('hidden');
+                leftPanel.classList.remove('flex');
+            }
+
+            highlightRing.position.set(data.target.x, 0.35, data.target.z);
+            highlightRing.visible = true;
+
+            const targetV = new THREE.Vector3(data.target.x, data.target.y, data.target.z);
+            const camV = new THREE.Vector3(data.camPos.x, data.camPos.y, data.camPos.z);
+            const offset = new THREE.Vector3().subVectors(camV, targetV);
+
+            camState.desiredTarget.copy(targetV);
+            camState.desiredSpherical.setFromVector3(offset);
+        };
+
+        window.resetSelection = function() {
+            highlightRing.visible = false;
+            document.querySelectorAll('.sector-btn').forEach(btn => btn.classList.remove('active'));
+            if (window.innerWidth < 1024) {
+                document.getElementById('inspector-panel').classList.add('hidden');
+            }
+            setCameraPreset('overview');
+            document.getElementById('insp-badge').textContent = 'Setor Principal';
+            document.getElementById('insp-title').textContent = 'Vista Geral do Evento';
+            document.getElementById('insp-desc').textContent = 'Maquete tridimensional realista georreferenciada conforme o croqui operacional no Parque Náutico Lagoa dos Quadros. Clique em qualquer estrutura ou inicie o Tour Imersivo.';
+            document.getElementById('insp-dim').textContent = 'Escala Real 1:1';
+            document.getElementById('insp-pos').textContent = 'Parque Náutico';
+        };
+
+        window.setCameraPreset = function(preset) {
+            document.querySelectorAll('.camera-btn').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.getElementById(`cam-${preset}`);
+            if (activeBtn) activeBtn.classList.add('active');
+
+            if (preset === 'overview') {
+                camState.desiredTarget.set(2, 0, 12);
+                camState.desiredSpherical.set(215, 0.72, -0.05);
+            } else if (preset === 'topdown') {
+                camState.desiredTarget.set(4, 0, 5);
+                camState.desiredSpherical.set(245, 0.05, 0);
+            } else if (preset === 'stage') {
+                camState.desiredTarget.set(-50, 3, -38);
+                camState.desiredSpherical.set(68, 0.68, 0.42);
+            } else if (preset === 'pavilhao') {
+                camState.desiredTarget.set(-65, 3, 5);
+                camState.desiredSpherical.set(95, 0.72, -0.45);
+            } else if (preset === 'bbq') {
+                camState.desiredTarget.set(18, 2, 72);
+                camState.desiredSpherical.set(62, 0.65, 0.25);
+            } else if (preset === 'parking') {
+                camState.desiredTarget.set(55, 2, -5);
+                camState.desiredSpherical.set(150, 0.68, 0.35);
+            } else if (preset === 'lagoon') {
+                camState.desiredTarget.set(-32, 2, -132);
+                camState.desiredSpherical.set(98, 0.64, 2.55);
+            }
+        };
+
+        document.getElementById('toggle-croqui-lines').addEventListener('change', (e) => {
+            croquiLinesGroup.visible = e.target.checked;
+        });
+
+        const leftPanelContent = document.getElementById('left-panel-content');
+        const toggleLeftBtn = document.getElementById('toggle-left-btn');
+        toggleLeftBtn.addEventListener('click', () => {
+            const isHidden = leftPanelContent.classList.toggle('hidden');
+            toggleLeftBtn.textContent = isHidden ? '+' : '−';
+        });
+
+        window.addEventListener('resize', () => {
+            cachedViewportW = window.innerWidth;
+            cachedViewportH = window.innerHeight;
+            camera.aspect = cachedViewportW / cachedViewportH;
+            camera.updateProjectionMatrix();
+            renderer.setSize(cachedViewportW, cachedViewportH);
+            forceLabelUpdate = true;
+        });
+
+        // ============================================================================
+        // 15. MAIN ANIMATION LOOP (OPTIMIZED 60 FPS + FPS METER)
+        // ============================================================================
+        const clock = new THREE.Clock();
+        const fpsBadge = document.getElementById('fps-badge');
+        let fpsFrames = 0;
+        let fpsLastTime = performance.now();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (document.hidden) return;
+
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const elapsed = clock.getElapsedTime();
+
+            // FPS Counter (updates every 500ms)
+            fpsFrames++;
+            const now = performance.now();
+            if (now - fpsLastTime >= 500) {
+                const fps = Math.round((fpsFrames * 1000) / (now - fpsLastTime));
+                if (fpsBadge) fpsBadge.textContent = `${fps} FPS`;
+                fpsFrames = 0;
+                fpsLastTime = now;
+            }
+
+            // Rotate the 2 Churrasqueiras Giratórias stainless wheels
+            for (let i = 0; i < animatedWheels.length; i++) {
+                animatedWheels[i].rotation.z = elapsed * 0.48 + i;
+            }
+
+            // Update GPU-Instanced Smoke Particles
+            for (let i = 0; i < smokeCount; i++) {
+                const sd = smokeData[i];
+                sd.y += sd.speed * delta;
+                if (sd.y > 8.5) sd.y = 1.0;
+
+                const progress = (sd.y - 1.0) / 7.5;
+                const s = sd.baseScale * (1 + progress * 1.4) * (1 - Math.pow(progress, 3));
+                smokeDummy.position.set(
+                    sd.baseX + Math.sin(elapsed * 1.4 + sd.phase) * 0.85,
+                    sd.y,
+                    sd.baseZ
+                );
+                smokeDummy.scale.setScalar(Math.max(0.05, s));
+                smokeDummy.updateMatrix();
+                smokeInstanced.setMatrixAt(i, smokeDummy.matrix);
+            }
+            smokeInstanced.instanceMatrix.needsUpdate = true;
+
+            // Animate flickering flames & glowing embers
+            for (let i = 0; i < flameMeshes.length; i++) {
+                const fl = flameMeshes[i];
+                const s = fl.userData.baseScale + Math.sin(elapsed * 12 + fl.userData.phase + i) * 0.22;
+                fl.scale.set(1, s, 1);
+            }
+
+            for (let i = 0; i < emberMeshes.length; i++) {
+                emberMeshes[i].material.emissiveIntensity = 0.72 + Math.sin(elapsed * 6 + i) * 0.25;
+            }
+
+            if (volumetricBeamsGroup.visible) {
+                for (let i = 0; i < stageBeams.length; i++) {
+                    stageBeams[i].rotation.z = (i - 1) * 0.15 + Math.sin(elapsed * 1.2 + i) * 0.12;
+                }
+            }
+
+            if (highlightRing.visible) {
+                const s = 1 + Math.sin(elapsed * 4) * 0.08;
+                highlightRing.scale.set(s, s, 1);
+            }
+
+            if (tourState.active && !tourState.paused) {
+                tourState.progress += (delta * tourState.speedMultiplier) / tourState.durationSeconds;
+
+                if (tourState.progress >= 1.0) {
+                    if (isRecordingVideo) {
+                        stopVideoRecording();
+                    }
+                    tourState.progress = 0;
+                }
+
+                const stepIdx = Math.min(
+                    TOUR_WAYPOINTS.length - 1,
+                    Math.floor(tourState.progress * TOUR_WAYPOINTS.length)
+                );
+                updateTourStepCard(stepIdx);
+                applyTourSplineCamera(tourState.progress);
+
+                tourSlider.value = Math.floor(tourState.progress * 1000);
+                document.getElementById('tour-time-label').textContent = `${Math.floor(tourState.progress * 100)}%`;
+            } else {
+                handleKeyboardFreeNavigation(delta);
+                applyCameraTransform(delta);
+            }
+
+            updateLabelsProjection();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
